@@ -67,9 +67,9 @@ def doctor(require_cuda: Annotated[bool, typer.Option()] = False) -> None:
 
 @app.command("inspect-data")
 def inspect_data(
-    dataset_root: Path = Path("../data/raw/scene01"),
-    train_subjects: Path = Path("../data/raw/train_sub_list.txt"),
-    test_subjects: Path = Path("../data/raw/test_sub_list.txt"),
+    dataset_root: Path = Path("data/raw/scene01"),
+    train_subjects: Path = Path("data/raw/train_sub_list.txt"),
+    test_subjects: Path = Path("data/raw/test_sub_list.txt"),
     probe: bool = True,
 ) -> None:
     records = build_manifest(dataset_root, train_subjects, test_subjects, probe)

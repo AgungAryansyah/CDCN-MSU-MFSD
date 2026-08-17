@@ -21,13 +21,13 @@ def test_parse_attack_name() -> None:
 
 @pytest.mark.dataset
 def test_local_dataset_manifest() -> None:
-    root = Path("../data/raw/scene01")
+    root = Path("data/raw/scene01")
     if not root.exists():
         pytest.skip("MSU-MFSD is not available")
     records = build_manifest(
         root,
-        Path("../data/raw/train_sub_list.txt"),
-        Path("../data/raw/test_sub_list.txt"),
+        Path("data/raw/train_sub_list.txt"),
+        Path("data/raw/test_sub_list.txt"),
         probe=False,
     )
     summary = manifest_summary(records)

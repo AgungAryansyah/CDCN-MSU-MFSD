@@ -47,16 +47,19 @@ or `disabled` for local-only operation.
 
 ## Data preparation
 
-The default layout expects the repository and dataset to be siblings:
+The runtime dataset is stored inside the project so the directory can be moved
+or synchronized without rewriting paths:
 
 ```text
-Skripsi/
-├── CDCN-MSU-MFSD/
+CDCN-MSU-MFSD/
 └── data/raw/
     ├── scene01/
     ├── train_sub_list.txt
     └── test_sub_list.txt
 ```
+
+`data/` is intentionally Git-ignored because it contains approximately 11 GB,
+but it is included by a normal filesystem `rsync` unless explicitly excluded.
 
 Inspect the raw data and create the manifest, folds, and 32 cached candidate
 frames per video:
@@ -154,4 +157,3 @@ uv run --extra cpu ruff format --check .
 uv run --extra cpu mypy
 uv run --extra cpu pytest
 ```
-

@@ -28,7 +28,7 @@ def test_crop_box_clamps_to_image() -> None:
 
 @pytest.mark.dataset
 def test_rotated_video_decodes_in_display_orientation() -> None:
-    path = Path("../data/raw/scene01/real/real_client003_android_SD_scene01.mp4")
+    path = Path("data/raw/scene01/real/real_client003_android_SD_scene01.mp4")
     if not path.exists():
         pytest.skip("MSU-MFSD is not available")
     frame = decode_frame(path, 0)

@@ -1,7 +1,7 @@
 paths:
-  dataset_root: ../data/raw/scene01
-  train_subjects: ../data/raw/train_sub_list.txt
-  test_subjects: ../data/raw/test_sub_list.txt
+  dataset_root: data/raw/scene01
+  train_subjects: data/raw/train_sub_list.txt
+  test_subjects: data/raw/test_sub_list.txt
   cache_root: cache
   output_root: outputs
   depth_root: cache/depth
@@ -45,4 +45,3 @@ experiment:
   fold: 0
   seed: 2026
   phase: cv
-

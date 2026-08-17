@@ -3,7 +3,8 @@
 ## Preflight
 
 1. Install uv and FFmpeg/FFprobe.
-2. Clone or transfer this repository beside the `data/` directory.
+2. Transfer the complete project directory, including its ignored `data/`
+   directory.
 3. Run `uv sync --extra cu130`.
 4. Run `uv run --extra cu130 cdcn-msu doctor --require-cuda`.
 5. Confirm the report names the RTX 3060, compute capability 8.6, approximately
@@ -11,6 +12,15 @@
 
 If the doctor command fails because the CUDA wheel cannot initialize, update the
 NVIDIA driver. Do not silently replace the locked CUDA/PyTorch stack.
+
+From the workstation, a transfer that includes raw data while omitting local
+environments and generated outputs is:
+
+```bash
+rsync -a --info=progress2 \
+  --exclude .git --exclude .venv --exclude cache --exclude outputs \
+  CDCN-MSU-MFSD/ user@server:/path/to/CDCN-MSU-MFSD/
+```
 
 ## Tracking and storage
 

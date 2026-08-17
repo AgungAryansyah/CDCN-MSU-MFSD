@@ -15,7 +15,7 @@ def test_ablation_matrix_sizes() -> None:
 
 def test_median_best_epoch_uses_one_based_epochs(tmp_path: Path) -> None:
     paths = []
-    for index, epoch in enumerate((3, 7, 5)):
+    for index, epoch in enumerate((3, 7, 5, 4, 8)):
         path = tmp_path / f"summary-{index}.json"
         path.write_text(f'{{"best_epoch": {epoch}}}\n')
         paths.append(path)

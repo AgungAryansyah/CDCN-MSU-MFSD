@@ -47,3 +47,9 @@ def test_official_test_requires_frozen_threshold(tmp_path: Path) -> None:
     config = load_config(Path("configs/base.yaml"))
     with pytest.raises(ValueError, match="frozen validation threshold"):
         evaluate_checkpoint(config, tmp_path / "missing.pt", "test", tmp_path)
+
+
+def test_official_test_requires_refit_configuration(tmp_path: Path) -> None:
+    config = load_config(Path("configs/base.yaml"))
+    with pytest.raises(ValueError, match="refit checkpoint"):
+        evaluate_checkpoint(config, tmp_path / "missing.pt", "test", tmp_path, threshold=0.5)

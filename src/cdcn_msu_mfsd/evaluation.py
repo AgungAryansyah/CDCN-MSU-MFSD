@@ -209,6 +209,8 @@ def evaluate_checkpoint(
 ) -> dict[str, Any]:
     if split == "test" and threshold is None:
         raise ValueError("Official test evaluation requires a frozen validation threshold")
+    if split == "test" and config.experiment.phase not in {"refit", "test"}:
+        raise ValueError("Official test evaluation requires a refit checkpoint configuration")
     device = select_device(config.runtime.device)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     if checkpoint.get("config_hash") != config_hash(config):

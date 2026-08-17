@@ -117,6 +117,11 @@ def aggregate_oof(paths: list[Path], output_dir: Path) -> dict[str, Any]:
                 raise ValueError(f"Duplicate out-of-fold prediction for {item.video_id}")
             predictions.append(item)
             seen.add(item.video_id)
+    if len(predictions) != 120:
+        raise ValueError(f"Expected 120 out-of-fold videos, received {len(predictions)}")
+    labels = [item.label for item in predictions]
+    if labels.count(1) != 30 or labels.count(0) != 90:
+        raise ValueError("Out-of-fold predictions do not match the official training class counts")
     threshold = select_threshold(predictions)
     report = metric_report(predictions, threshold)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -133,13 +138,16 @@ def aggregate_oof(paths: list[Path], output_dir: Path) -> dict[str, Any]:
 
 
 def median_best_epoch(summary_paths: list[Path]) -> int:
-    if not summary_paths:
-        raise ValueError("At least one cross-validation summary is required")
+    if len(summary_paths) != 5:
+        raise ValueError("Exactly five cross-validation summaries are required")
     epochs = [int(json.loads(path.read_text())["best_epoch"]) + 1 for path in summary_paths]
     return max(1, round(statistics.median(epochs)))
 
 
 def run_refit(config: Config, epochs: int) -> Path:
+    config = config.model_copy(
+        update={"training": config.training.model_copy(update={"epochs": epochs})}
+    )
     if config.experiment.phase != "refit":
         raise ValueError("Refit requires experiment.phase=refit")
     seed_everything(config.experiment.seed, config.runtime.deterministic)
@@ -218,5 +226,8 @@ def run_refit(config: Config, epochs: int) -> Path:
 
 
 def run_refit_test(config: Config, epochs: int, threshold: float) -> dict[str, Any]:
+    config = config.model_copy(
+        update={"training": config.training.model_copy(update={"epochs": epochs})}
+    )
     checkpoint = run_refit(config, epochs)
     return evaluate_checkpoint(config, checkpoint, "test", checkpoint.parent, threshold)

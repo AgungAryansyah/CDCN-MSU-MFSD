@@ -68,6 +68,7 @@ packages = ["src/cdcn_msu_mfsd"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
+markers = ["dataset: requires the local MSU-MFSD dataset"]
 
 [tool.ruff]
 line-length = 100
@@ -80,4 +81,3 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.12"
 strict = true
 packages = ["cdcn_msu_mfsd"]
-

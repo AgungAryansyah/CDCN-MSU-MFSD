@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Annotated
 
+import torch
 import typer
 
 from cdcn_msu_mfsd import __version__
@@ -40,6 +41,28 @@ def _echo(value: object) -> None:
 @app.command()
 def version() -> None:
     typer.echo(__version__)
+
+
+@app.command()
+def doctor(require_cuda: Annotated[bool, typer.Option()] = False) -> None:
+    cuda_available = torch.cuda.is_available()
+    report: dict[str, object] = {
+        "torch": torch.__version__,
+        "cuda_build": torch.version.cuda,
+        "cuda_available": cuda_available,
+    }
+    if cuda_available:
+        properties = torch.cuda.get_device_properties(0)
+        report.update(
+            {
+                "device": properties.name,
+                "compute_capability": f"{properties.major}.{properties.minor}",
+                "vram_gib": properties.total_memory / (1024**3),
+            }
+        )
+    _echo(report)
+    if require_cuda and not cuda_available:
+        raise typer.Exit(1)
 
 
 @app.command("inspect-data")

@@ -11,6 +11,13 @@ def test_version_command() -> None:
     assert result.stdout.strip() == "0.1.0"
 
 
+def test_doctor_reports_torch_runtime() -> None:
+    result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 0
+    assert '"cuda_available"' in result.stdout
+    assert '"torch": "2.11.0' in result.stdout
+
+
 def test_matrix_dry_run_does_not_train() -> None:
     result = runner.invoke(
         app,

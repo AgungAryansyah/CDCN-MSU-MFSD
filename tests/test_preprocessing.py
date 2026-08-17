@@ -15,6 +15,10 @@ def test_uniform_selection_includes_endpoints() -> None:
     assert select_uniform(list(range(10)), 3) == [0, 4, 9]
 
 
+def test_uniform_selection_can_return_one_item() -> None:
+    assert select_uniform(list(range(10)), 1) == [5]
+
+
 def test_crop_box_clamps_to_image() -> None:
     annotation = FaceAnnotation(0, 5, 10, 105, 130, 30.0, 40.0, 80.0, 40.0)
     left, top, right, bottom = crop_box(annotation, 720, 480, 1.5)

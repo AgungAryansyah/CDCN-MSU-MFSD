@@ -70,6 +70,8 @@ def select_uniform[T](items: list[T], count: int) -> list[T]:
         raise ValueError("Frame count must be positive")
     if len(items) <= count:
         return items
+    if count == 1:
+        return [items[len(items) // 2]]
     indices = [round(index * (len(items) - 1) / (count - 1)) for index in range(count)]
     return [items[index] for index in indices]
 

@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cdcn-msu-mfsd"
+version = "0.1.0"
+description = "Modern CDCN and CDCN++ training pipeline for MSU-MFSD"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "numpy>=2.1",
+  "pillow>=11.0",
+  "pydantic>=2.10",
+  "python-dotenv>=1.0",
+  "pyyaml>=6.0",
+  "typer>=0.15",
+  "wandb>=0.19",
+]
+
+[project.optional-dependencies]
+cpu = [
+  "torch==2.11.0",
+  "torchvision==0.26.0",
+]
+cu130 = [
+  "torch==2.11.0",
+  "torchvision==0.26.0",
+]
+
+[project.scripts]
+cdcn-msu = "cdcn_msu_mfsd.cli:app"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.9",
+]
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "cu130" }]]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu130", extra = "cu130" },
+]
+torchvision = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu130", extra = "cu130" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cdcn_msu_mfsd"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["cdcn_msu_mfsd"]
+

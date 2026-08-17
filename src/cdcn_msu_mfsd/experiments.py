@@ -1,0 +1,213 @@
+import itertools
+import json
+import statistics
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field
+from torch.utils.data import DataLoader
+
+from cdcn_msu_mfsd.config import Config, config_hash, load_config, save_resolved_config
+from cdcn_msu_mfsd.data.dataset import MSUMFSDDataset
+from cdcn_msu_mfsd.data.preprocessing import load_frame_records
+from cdcn_msu_mfsd.data.supervision import BinaryTarget, PseudoDepthTarget
+from cdcn_msu_mfsd.evaluation import (
+    VideoPrediction,
+    evaluate_checkpoint,
+    metric_report,
+    select_threshold,
+)
+from cdcn_msu_mfsd.models import build_model
+from cdcn_msu_mfsd.tracking import create_tracker
+from cdcn_msu_mfsd.training import (
+    Trainer,
+    output_directory,
+    provenance,
+    run_training,
+    save_checkpoint,
+    seed_everything,
+    select_device,
+)
+
+
+class MatrixConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base: Path
+    name: str
+    fixed: dict[str, Any] = Field(default_factory=dict)
+    axes: dict[str, list[Any]]
+
+
+def load_matrix(path: Path) -> MatrixConfig:
+    raw = yaml.safe_load(path.read_text())
+    matrix = MatrixConfig.model_validate(raw)
+    return matrix.model_copy(update={"base": (path.parent / matrix.base).resolve()})
+
+
+def _override(key: str, value: Any) -> str:
+    return f"{key}={json.dumps(value)}"
+
+
+def expand_matrix(path: Path) -> list[Config]:
+    matrix = load_matrix(path)
+    keys = sorted(matrix.axes)
+    configurations = []
+    seen = set()
+    for values in itertools.product(*(matrix.axes[key] for key in keys)):
+        overrides = [_override(key, value) for key, value in matrix.fixed.items()]
+        overrides.extend(_override(key, value) for key, value in zip(keys, values, strict=True))
+        overrides.append(_override("experiment.name", matrix.name))
+        config = load_config(matrix.base, overrides)
+        digest = config_hash(config)
+        if digest not in seen:
+            configurations.append(config)
+            seen.add(digest)
+    return configurations
+
+
+def run_matrix(path: Path, dry_run: bool = False) -> list[dict[str, Any]]:
+    results = []
+    for config in expand_matrix(path):
+        output_dir = output_directory(config)
+        record: dict[str, Any] = {
+            "hash": config_hash(config),
+            "output_dir": str(output_dir),
+            "model": config.model.name,
+            "supervision": config.supervision.kind,
+            "fold": config.experiment.fold,
+            "seed": config.experiment.seed,
+        }
+        if dry_run:
+            record["status"] = "planned"
+        elif (output_dir / "summary.json").exists() and (output_dir / "best.pt").exists():
+            record["status"] = "skipped_complete"
+        else:
+            resume = output_dir / "last.pt"
+            result = run_training(config, resume if resume.exists() else None)
+            evaluate_checkpoint(config, output_dir / "best.pt", "validation", output_dir)
+            record.update(
+                {
+                    "status": "completed",
+                    "best_epoch": result.best_epoch,
+                    "best_validation_loss": result.best_validation_loss,
+                }
+            )
+        results.append(record)
+    return results
+
+
+def aggregate_oof(paths: list[Path], output_dir: Path) -> dict[str, Any]:
+    predictions = []
+    seen = set()
+    for path in paths:
+        for line in path.read_text().splitlines():
+            if not line:
+                continue
+            item = VideoPrediction(**json.loads(line))
+            if item.video_id in seen:
+                raise ValueError(f"Duplicate out-of-fold prediction for {item.video_id}")
+            predictions.append(item)
+            seen.add(item.video_id)
+    threshold = select_threshold(predictions)
+    report = metric_report(predictions, threshold)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "oof_videos.jsonl").write_text(
+        "\n".join(json.dumps(item.__dict__, sort_keys=True) for item in predictions) + "\n"
+    )
+    (output_dir / "threshold.json").write_text(
+        json.dumps({"threshold": threshold}, indent=2) + "\n"
+    )
+    (output_dir / "oof_metrics.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n"
+    )
+    return report
+
+
+def median_best_epoch(summary_paths: list[Path]) -> int:
+    if not summary_paths:
+        raise ValueError("At least one cross-validation summary is required")
+    epochs = [int(json.loads(path.read_text())["best_epoch"]) + 1 for path in summary_paths]
+    return max(1, round(statistics.median(epochs)))
+
+
+def run_refit(config: Config, epochs: int) -> Path:
+    if config.experiment.phase != "refit":
+        raise ValueError("Refit requires experiment.phase=refit")
+    seed_everything(config.experiment.seed, config.runtime.deterministic)
+    device = select_device(config.runtime.device)
+    records = load_frame_records(config.paths.cache_root / "frames.jsonl")
+    subjects = {record.subject for record in records if record.protocol == "train"}
+    target_provider = (
+        BinaryTarget()
+        if config.supervision.kind == "binary"
+        else PseudoDepthTarget(config.paths.depth_root)
+    )
+    dataset = MSUMFSDDataset(
+        records,
+        config.paths.cache_root,
+        target_provider,
+        subjects,
+        True,
+        config.data.frames_per_video,
+        config.experiment.seed,
+        config.data.crop_scale,
+        (config.data.crop_scale_min, config.data.crop_scale_max),
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=config.training.batch_size,
+        shuffle=True,
+        num_workers=config.data.workers,
+        pin_memory=device.type == "cuda",
+        persistent_workers=config.data.workers > 0,
+    )
+    output_dir = (
+        config.paths.output_root
+        / config.experiment.name
+        / f"{config.model.name}-{config.supervision.kind}"
+        / "refit"
+        / f"seed-{config.experiment.seed}"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_resolved_config(config, output_dir / "config.yaml")
+    run_provenance = provenance(config)
+    tracker = create_tracker(config, output_dir, run_provenance)
+    trainer = Trainer(
+        config,
+        build_model(config.model.name, config.model.theta),
+        loader,
+        loader,
+        tracker,
+        device,
+    )
+    global_step = 0
+    try:
+        for epoch in range(epochs):
+            metrics, global_step = trainer.train_epoch(epoch, global_step)
+            tracker.log(
+                {"epoch": epoch, **{f"refit/{key}": value for key, value in metrics.items()}},
+                global_step,
+            )
+            trainer.scheduler.step()
+            save_checkpoint(
+                output_dir / "final.pt",
+                epoch,
+                metrics["total"],
+                trainer.model,
+                trainer.optimizer,
+                trainer.scheduler,
+                trainer.scaler,
+                config,
+            )
+        tracker.summary({"refit_epochs": epochs})
+    finally:
+        tracker.finish()
+    return output_dir / "final.pt"
+
+
+def run_refit_test(config: Config, epochs: int, threshold: float) -> dict[str, Any]:
+    checkpoint = run_refit(config, epochs)
+    return evaluate_checkpoint(config, checkpoint, "test", checkpoint.parent, threshold)
+

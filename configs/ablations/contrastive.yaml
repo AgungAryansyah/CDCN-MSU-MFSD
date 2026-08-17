@@ -1,0 +1,12 @@
+base: ../base.yaml
+name: ablation-contrastive
+fixed:
+  model.name: cdcnpp
+  model.theta: 0.7
+  supervision.kind: pseudo_depth
+  experiment.phase: cv
+  experiment.seed: 2026
+axes:
+  loss.contrastive_weight: [0.0, 0.5, 1.0]
+  experiment.fold: [0, 1, 2, 3, 4]
+

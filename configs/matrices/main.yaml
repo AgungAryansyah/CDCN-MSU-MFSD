@@ -1,0 +1,10 @@
+base: ../base.yaml
+name: main
+fixed:
+  experiment.phase: cv
+axes:
+  model.name: [cdcn, cdcnpp]
+  supervision.kind: [binary, pseudo_depth]
+  experiment.fold: [0, 1, 2, 3, 4]
+  experiment.seed: [2026, 2027, 2028]
+

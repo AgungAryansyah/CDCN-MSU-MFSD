@@ -25,4 +25,3 @@ def test_model_output_shape_and_gradient(model_type: type[nn.Module]) -> None:
 def test_model_registry_rejects_unknown_name() -> None:
     with pytest.raises(ValueError, match="Unknown model"):
         build_model("unknown")
-

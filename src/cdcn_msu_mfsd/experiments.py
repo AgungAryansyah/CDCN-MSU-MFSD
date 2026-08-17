@@ -210,4 +210,3 @@ def run_refit(config: Config, epochs: int) -> Path:
 def run_refit_test(config: Config, epochs: int, threshold: float) -> dict[str, Any]:
     checkpoint = run_refit(config, epochs)
     return evaluate_checkpoint(config, checkpoint, "test", checkpoint.parent, threshold)
-

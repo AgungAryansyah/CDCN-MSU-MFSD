@@ -43,4 +43,3 @@ def test_local_dataset_manifest() -> None:
     folds = make_folds(records)
     assert len(folds) == 5
     assert all(len(fold.validation_subjects) == 3 for fold in folds)
-

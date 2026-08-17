@@ -224,9 +224,9 @@ class Trainer:
         self.validation_loader = validation_loader
         self.tracker = tracker
         self.device = device
-        self.loss = DepthLoss(
-            config.loss.absolute_weight, config.loss.contrastive_weight
-        ).to(device)
+        self.loss = DepthLoss(config.loss.absolute_weight, config.loss.contrastive_weight).to(
+            device
+        )
         self.optimizer = Adam(
             self.model.parameters(),
             lr=config.optimizer.learning_rate,
@@ -263,8 +263,9 @@ class Trainer:
                 scaled_loss = components["total"] / self.config.training.gradient_accumulation
             cast(Tensor, self.scaler.scale(scaled_loss)).backward()  # type: ignore[no-untyped-call]
             should_step = (
-                (batch_index + 1) % self.config.training.gradient_accumulation == 0
-                or batch_index + 1 == len(self.train_loader)
+                batch_index + 1
+            ) % self.config.training.gradient_accumulation == 0 or batch_index + 1 == len(
+                self.train_loader
             )
             if should_step:
                 self.scaler.step(self.optimizer)

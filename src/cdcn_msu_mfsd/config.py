@@ -163,4 +163,3 @@ def config_hash(config: Config) -> str:
 def save_resolved_config(config: Config, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(resolved_config(config), sort_keys=True))
-

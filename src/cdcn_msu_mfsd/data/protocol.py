@@ -56,4 +56,3 @@ def load_folds(path: Path) -> list[Fold]:
         )
         for item in json.loads(path.read_text())
     ]
-

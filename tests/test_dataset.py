@@ -11,9 +11,7 @@ from cdcn_msu_mfsd.data.supervision import BinaryTarget, PseudoDepthTarget, impo
 def _record(label: int = 1) -> FrameRecord:
     return FrameRecord(
         video_id=(
-            "real_client001_android_SD_scene01"
-            if label
-            else "attack_client001_android_SD_scene01"
+            "real_client001_android_SD_scene01" if label else "attack_client001_android_SD_scene01"
         ),
         frame_index=0,
         frame_path="frames/video/000000.jpg",

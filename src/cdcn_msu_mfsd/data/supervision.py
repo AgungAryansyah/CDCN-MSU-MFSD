@@ -100,8 +100,7 @@ def import_prnet_outputs(contract_path: Path, output_root: Path, depth_root: Pat
             continue
         record = PRNetRecord(**json.loads(line))
         candidates = [
-            output_root / f"{record.output_stem}{suffix}"
-            for suffix in (".npy", ".png", ".jpg")
+            output_root / f"{record.output_stem}{suffix}" for suffix in (".npy", ".png", ".jpg")
         ]
         source = next((path for path in candidates if path.exists()), None)
         if source is None:

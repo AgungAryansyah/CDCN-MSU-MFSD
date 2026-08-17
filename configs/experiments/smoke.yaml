@@ -1,0 +1,16 @@
+extends:
+  - ../base.yaml
+experiment:
+  name: smoke
+  phase: smoke
+tracking:
+  enabled: false
+training:
+  epochs: 1
+  batch_size: 2
+  gradient_accumulation: 1
+  patience: 1
+data:
+  workers: 0
+  frames_per_video: 1
+

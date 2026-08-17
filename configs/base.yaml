@@ -1,0 +1,48 @@
+paths:
+  dataset_root: ../data/raw/scene01
+  train_subjects: ../data/raw/train_sub_list.txt
+  test_subjects: ../data/raw/test_sub_list.txt
+  cache_root: cache
+  output_root: outputs
+  depth_root: cache/depth
+data:
+  candidates_per_video: 32
+  frames_per_video: 8
+  crop_scale: 1.3
+  crop_scale_min: 1.2
+  crop_scale_max: 1.5
+  workers: 8
+model:
+  name: cdcn
+  theta: 0.7
+supervision:
+  kind: binary
+loss:
+  absolute_weight: 1.0
+  contrastive_weight: 1.0
+optimizer:
+  learning_rate: 0.0001
+  weight_decay: 0.00005
+scheduler:
+  step_size: 60
+  gamma: 0.5
+training:
+  epochs: 200
+  batch_size: 8
+  gradient_accumulation: 2
+  patience: 30
+runtime:
+  device: auto
+  amp: true
+  compile: false
+  deterministic: true
+  allow_tf32: true
+tracking:
+  enabled: true
+  log_every_steps: 20
+experiment:
+  name: baseline
+  fold: 0
+  seed: 2026
+  phase: cv
+

@@ -1,0 +1,3 @@
+supervision:
+  kind: pseudo_depth
+

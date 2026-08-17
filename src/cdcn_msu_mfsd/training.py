@@ -11,7 +11,7 @@ import torch
 from torch import Tensor, nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 
 from cdcn_msu_mfsd.config import Config, config_hash, save_resolved_config
 from cdcn_msu_mfsd.data.dataset import MSUMFSDDataset, Sample, TargetProvider
@@ -55,6 +55,19 @@ def _seed_worker(_: int) -> None:
     np.random.seed(worker_seed)
 
 
+class EpochRandomSampler(Sampler[int]):
+    def __init__(self, dataset: MSUMFSDDataset, seed: int) -> None:
+        self.dataset = dataset
+        self.seed = seed
+
+    def __iter__(self) -> Any:
+        generator = torch.Generator().manual_seed(self.seed + self.dataset.epoch)
+        return iter(torch.randperm(len(self.dataset), generator=generator).tolist())
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+
 def _loader(
     dataset: MSUMFSDDataset,
     config: Config,
@@ -65,7 +78,8 @@ def _loader(
     return DataLoader(
         dataset,
         batch_size=config.training.batch_size,
-        shuffle=shuffle,
+        shuffle=False,
+        sampler=EpochRandomSampler(dataset, config.experiment.seed) if shuffle else None,
         num_workers=config.data.workers,
         pin_memory=device.type == "cuda",
         persistent_workers=config.data.workers > 0,
@@ -163,7 +177,10 @@ def _restore_rng_state(state: dict[str, Any]) -> None:
 def save_checkpoint(
     path: Path,
     epoch: int,
+    best_epoch: int,
     best_loss: float,
+    global_step: int,
+    epochs_without_improvement: int,
     model: nn.Module,
     optimizer: Adam,
     scheduler: StepLR,
@@ -174,7 +191,10 @@ def save_checkpoint(
     torch.save(
         {
             "epoch": epoch,
+            "best_epoch": best_epoch,
             "best_loss": best_loss,
+            "global_step": global_step,
+            "epochs_without_improvement": epochs_without_improvement,
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "scheduler": scheduler.state_dict(),
@@ -193,7 +213,7 @@ def load_checkpoint(
     scheduler: StepLR,
     scaler: Any,
     config: Config,
-) -> tuple[int, float]:
+) -> tuple[int, int, float, int, int]:
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     if checkpoint["config_hash"] != config_hash(config):
         raise ValueError("Checkpoint configuration does not match the requested run")
@@ -202,7 +222,13 @@ def load_checkpoint(
     scheduler.load_state_dict(checkpoint["scheduler"])
     scaler.load_state_dict(checkpoint["scaler"])
     _restore_rng_state(checkpoint["rng"])
-    return int(checkpoint["epoch"]) + 1, float(checkpoint["best_loss"])
+    return (
+        int(checkpoint["epoch"]) + 1,
+        int(checkpoint["best_epoch"]),
+        float(checkpoint["best_loss"]),
+        int(checkpoint["global_step"]),
+        int(checkpoint["epochs_without_improvement"]),
+    )
 
 
 class Trainer:
@@ -303,8 +329,15 @@ class Trainer:
         best_epoch = -1
         start_epoch = 0
         global_step = 0
+        epochs_without_improvement = 0
         if resume is not None:
-            start_epoch, best_loss = load_checkpoint(
+            (
+                start_epoch,
+                best_epoch,
+                best_loss,
+                global_step,
+                epochs_without_improvement,
+            ) = load_checkpoint(
                 resume,
                 self.model,
                 self.optimizer,
@@ -312,7 +345,6 @@ class Trainer:
                 self.scaler,
                 self.config,
             )
-        epochs_without_improvement = 0
         epochs_completed = start_epoch
         for epoch in range(start_epoch, self.config.training.epochs):
             train_metrics, global_step = self.train_epoch(epoch, global_step)
@@ -328,33 +360,41 @@ class Trainer:
                 epoch_metrics["gpu/max_memory_gib"] = torch.cuda.max_memory_reserved() / (1024**3)
             self.tracker.log(epoch_metrics, global_step)
             current_loss = validation_metrics["total"]
-            if current_loss < best_loss:
+            improved = current_loss < best_loss
+            if improved:
                 best_loss = current_loss
                 best_epoch = epoch
                 epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+            self.scheduler.step()
+            if improved:
                 save_checkpoint(
                     output_dir / "best.pt",
                     epoch,
+                    best_epoch,
                     best_loss,
+                    global_step,
+                    epochs_without_improvement,
                     self.model,
                     self.optimizer,
                     self.scheduler,
                     self.scaler,
                     self.config,
                 )
-            else:
-                epochs_without_improvement += 1
             save_checkpoint(
                 output_dir / "last.pt",
                 epoch,
+                best_epoch,
                 best_loss,
+                global_step,
+                epochs_without_improvement,
                 self.model,
                 self.optimizer,
                 self.scheduler,
                 self.scaler,
                 self.config,
             )
-            self.scheduler.step()
             epochs_completed = epoch + 1
             if epochs_without_improvement >= self.config.training.patience:
                 break

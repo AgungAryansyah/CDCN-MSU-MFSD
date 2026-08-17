@@ -51,3 +51,5 @@ def test_cpu_trainer_writes_resumable_checkpoints(tmp_path: Path) -> None:
     resumed = Trainer(config, TinyModel(), loader, loader, tracker, torch.device("cpu"))
     resumed_result = resumed.fit(tmp_path, tmp_path / "last.pt")
     assert resumed_result.epochs_completed == 1
+    assert resumed_result.best_epoch == result.best_epoch
+    assert resumed_result.best_validation_loss == result.best_validation_loss

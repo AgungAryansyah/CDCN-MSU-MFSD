@@ -81,8 +81,15 @@ def run_matrix(path: Path, dry_run: bool = False) -> list[dict[str, Any]]:
         }
         if dry_run:
             record["status"] = "planned"
-        elif (output_dir / "summary.json").exists() and (output_dir / "best.pt").exists():
+        elif (
+            (output_dir / "summary.json").exists()
+            and (output_dir / "best.pt").exists()
+            and (output_dir / "validation_videos.jsonl").exists()
+        ):
             record["status"] = "skipped_complete"
+        elif (output_dir / "summary.json").exists() and (output_dir / "best.pt").exists():
+            evaluate_checkpoint(config, output_dir / "best.pt", "validation", output_dir)
+            record["status"] = "evaluated_complete_run"
         else:
             resume = output_dir / "last.pt"
             result = run_training(config, resume if resume.exists() else None)
@@ -194,7 +201,10 @@ def run_refit(config: Config, epochs: int) -> Path:
             save_checkpoint(
                 output_dir / "final.pt",
                 epoch,
+                epoch,
                 metrics["total"],
+                global_step,
+                0,
                 trainer.model,
                 trainer.optimizer,
                 trainer.scheduler,

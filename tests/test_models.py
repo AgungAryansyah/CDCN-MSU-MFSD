@@ -22,6 +22,14 @@ def test_model_output_shape_and_gradient(model_type: type[nn.Module]) -> None:
     assert torch.isfinite(inputs.grad).all()
 
 
+@pytest.mark.parametrize(
+    ("model_type", "parameter_count"),
+    [(CDCN, 2_245_016), (CDCNPP, 2_257_352)],
+)
+def test_model_parameter_count(model_type: type[nn.Module], parameter_count: int) -> None:
+    assert sum(parameter.numel() for parameter in model_type().parameters()) == parameter_count
+
+
 def test_model_registry_rejects_unknown_name() -> None:
     with pytest.raises(ValueError, match="Unknown model"):
         build_model("unknown")

@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 from typing import Annotated
 
@@ -50,6 +51,8 @@ def doctor(require_cuda: Annotated[bool, typer.Option()] = False) -> None:
         "torch": torch.__version__,
         "cuda_build": torch.version.cuda,
         "cuda_available": cuda_available,
+        "ffmpeg_available": shutil.which("ffmpeg") is not None,
+        "ffprobe_available": shutil.which("ffprobe") is not None,
     }
     if cuda_available:
         properties = torch.cuda.get_device_properties(0)
@@ -70,7 +73,7 @@ def inspect_data(
     dataset_root: Path = Path("data/raw/scene01"),
     train_subjects: Path = Path("data/raw/train_sub_list.txt"),
     test_subjects: Path = Path("data/raw/test_sub_list.txt"),
-    probe: bool = True,
+    probe: Annotated[bool, typer.Option(help="Read optional video metadata with ffprobe")] = False,
 ) -> None:
     records = build_manifest(dataset_root, train_subjects, test_subjects, probe)
     _echo(manifest_summary(records))
@@ -81,13 +84,14 @@ def prepare(
     config_path: Path = Path("configs/base.yaml"),
     override: Overrides = None,
     limit: Annotated[int | None, typer.Option(min=1)] = None,
+    probe: Annotated[bool, typer.Option(help="Read optional video metadata with ffprobe")] = False,
 ) -> None:
     config = load_config(config_path, override)
     records = build_manifest(
         config.paths.dataset_root,
         config.paths.train_subjects,
         config.paths.test_subjects,
-        probe=True,
+        probe=probe,
     )
     manifest_hash = save_manifest(records, config.paths.cache_root / "manifest.jsonl")
     folds = make_folds(records)

@@ -69,6 +69,9 @@ uv run --extra cu130 cdcn-msu inspect-data
 uv run --extra cu130 cdcn-msu prepare
 ```
 
+`ffprobe` is optional and only used when `--probe` is supplied. Frame extraction
+requires `ffmpeg`; `cdcn-msu doctor` reports the availability of both programs.
+
 Generated data is written under ignored `cache/`. The decoder honors FFmpeg
 display rotation before applying the dataset's display-space `.face` boxes.
 

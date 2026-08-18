@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from cdcn_msu_mfsd.data.manifest import build_manifest, manifest_summary, parse_video_name
+from cdcn_msu_mfsd.data.manifest import (
+    build_manifest,
+    manifest_summary,
+    parse_video_name,
+    probe_video,
+)
 from cdcn_msu_mfsd.data.protocol import make_folds
 
 
@@ -17,6 +22,13 @@ def test_parse_attack_name() -> None:
         "ipad_video",
         "laptop",
     )
+
+
+def test_probe_video_reports_missing_ffprobe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("cdcn_msu_mfsd.data.manifest.shutil.which", lambda _: None)
+
+    with pytest.raises(RuntimeError, match="ffprobe is not installed"):
+        probe_video(Path("video.mp4"))
 
 
 @pytest.mark.dataset

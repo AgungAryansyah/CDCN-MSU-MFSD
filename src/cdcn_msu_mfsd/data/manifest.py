@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 from collections import Counter
 from collections.abc import Iterable
@@ -47,6 +48,10 @@ def parse_video_name(stem: str) -> tuple[str, int, str | None, str]:
 
 
 def probe_video(path: Path) -> tuple[int, int, int, int]:
+    if shutil.which("ffprobe") is None:
+        raise RuntimeError(
+            "ffprobe is not installed. Re-run with probing disabled or install the FFmpeg tools."
+        )
     command = [
         "ffprobe",
         "-v",

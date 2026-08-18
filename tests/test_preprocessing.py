@@ -26,6 +26,13 @@ def test_crop_box_clamps_to_image() -> None:
     assert 0 <= top < bottom <= 480
 
 
+def test_decode_frame_reports_missing_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("cdcn_msu_mfsd.data.preprocessing.shutil.which", lambda _: None)
+
+    with pytest.raises(RuntimeError, match="ffmpeg is required for frame extraction"):
+        decode_frame(Path("video.mp4"), 0)
+
+
 @pytest.mark.dataset
 def test_rotated_video_decodes_in_display_orientation() -> None:
     path = Path("data/raw/scene01/real/real_client003_android_SD_scene01.mp4")

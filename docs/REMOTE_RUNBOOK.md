@@ -2,7 +2,7 @@
 
 ## Preflight
 
-1. Install uv and FFmpeg/FFprobe.
+1. Install uv and FFmpeg. FFprobe is optional metadata tooling.
 2. Transfer the complete project directory, including its ignored `data/`
    directory.
 3. Run `uv sync --extra cu130`.

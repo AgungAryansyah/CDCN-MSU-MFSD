@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import shutil
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -99,6 +100,11 @@ def crop_box(
 
 
 def decode_frame(video_path: Path, frame_index: int) -> Image.Image:
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError(
+            "ffmpeg is required for frame extraction. "
+            "Install the FFmpeg tools before running prepare."
+        )
     command = [
         "ffmpeg",
         "-v",

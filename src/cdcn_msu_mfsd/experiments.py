@@ -11,7 +11,11 @@ from torch.utils.data import DataLoader
 from cdcn_msu_mfsd.config import Config, config_hash, load_config, save_resolved_config
 from cdcn_msu_mfsd.data.dataset import MSUMFSDDataset
 from cdcn_msu_mfsd.data.preprocessing import load_frame_records
-from cdcn_msu_mfsd.data.supervision import BinaryTarget, PseudoDepthTarget
+from cdcn_msu_mfsd.data.supervision import (
+    BinaryTarget,
+    PseudoDepthTarget,
+    validate_pseudo_depth_targets,
+)
 from cdcn_msu_mfsd.evaluation import (
     VideoPrediction,
     evaluate_checkpoint,
@@ -153,6 +157,11 @@ def run_refit(config: Config, epochs: int) -> Path:
     seed_everything(config.experiment.seed, config.runtime.deterministic)
     device = select_device(config.runtime.device)
     records = load_frame_records(config.paths.cache_root / "frames.jsonl")
+    depth_validation = (
+        validate_pseudo_depth_targets(records, config.paths.depth_root)
+        if config.supervision.kind == "pseudo_depth"
+        else None
+    )
     subjects = {record.subject for record in records if record.protocol == "train"}
     target_provider = (
         BinaryTarget()
@@ -187,7 +196,7 @@ def run_refit(config: Config, epochs: int) -> Path:
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     save_resolved_config(config, output_dir / "config.yaml")
-    run_provenance = provenance(config)
+    run_provenance = provenance(config, depth_validation)
     tracker = create_tracker(config, output_dir, run_provenance)
     trainer = Trainer(
         config,

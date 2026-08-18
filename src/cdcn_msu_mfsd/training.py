@@ -17,7 +17,12 @@ from cdcn_msu_mfsd.config import Config, config_hash, save_resolved_config
 from cdcn_msu_mfsd.data.dataset import MSUMFSDDataset, Sample, TargetProvider
 from cdcn_msu_mfsd.data.preprocessing import load_frame_records
 from cdcn_msu_mfsd.data.protocol import load_folds
-from cdcn_msu_mfsd.data.supervision import BinaryTarget, PseudoDepthTarget
+from cdcn_msu_mfsd.data.supervision import (
+    BinaryTarget,
+    PseudoDepthTarget,
+    PseudoDepthValidation,
+    validate_pseudo_depth_targets,
+)
 from cdcn_msu_mfsd.losses import DepthLoss
 from cdcn_msu_mfsd.models import build_model
 from cdcn_msu_mfsd.tracking import MetricsTracker, create_tracker
@@ -128,7 +133,9 @@ def _file_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def provenance(config: Config) -> dict[str, str]:
+def provenance(
+    config: Config, depth_validation: PseudoDepthValidation | None = None
+) -> dict[str, str]:
     try:
         git_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"], check=True, capture_output=True, text=True
@@ -141,6 +148,17 @@ def provenance(config: Config) -> dict[str, str]:
     }
     result = {"git_sha": git_sha, "config_sha256": config_hash(config)}
     result.update({key: _file_hash(path) for key, path in files.items() if path.exists()})
+    depth_provenance = config.paths.depth_root / "provenance.json"
+    if depth_validation is not None:
+        result["pseudo_depth_targets"] = str(depth_validation.targets)
+        result["pseudo_depth_sha256"] = depth_validation.sha256
+    if depth_provenance.exists():
+        result["pseudo_depth_provenance_sha256"] = _file_hash(depth_provenance)
+        metadata = json.loads(depth_provenance.read_text())
+        for key in ("contract_sha256", "generation_sha256", "checkpoint_sha256"):
+            value = metadata.get(key)
+            if isinstance(value, str):
+                result[f"pseudo_depth_{key}"] = value
     return result
 
 
@@ -414,10 +432,14 @@ def run_training(config: Config, resume: Path | None = None) -> TrainingResult:
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = config.runtime.allow_tf32
         torch.backends.cudnn.allow_tf32 = config.runtime.allow_tf32
+    depth_validation = None
+    if config.supervision.kind == "pseudo_depth":
+        frame_records = load_frame_records(config.paths.cache_root / "frames.jsonl")
+        depth_validation = validate_pseudo_depth_targets(frame_records, config.paths.depth_root)
     output_dir = output_directory(config)
     output_dir.mkdir(parents=True, exist_ok=True)
     save_resolved_config(config, output_dir / "config.yaml")
-    run_provenance = provenance(config)
+    run_provenance = provenance(config, depth_validation)
     (output_dir / "provenance.json").write_text(
         json.dumps(run_provenance, indent=2, sort_keys=True) + "\n"
     )

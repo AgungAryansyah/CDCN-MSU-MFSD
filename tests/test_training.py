@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import torch
@@ -6,8 +7,9 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from cdcn_msu_mfsd.config import load_config
+from cdcn_msu_mfsd.data.supervision import PseudoDepthValidation
 from cdcn_msu_mfsd.tracking import MetricsTracker
-from cdcn_msu_mfsd.training import Trainer
+from cdcn_msu_mfsd.training import Trainer, provenance
 
 
 class TinyDataset(Dataset[dict[str, object]]):
@@ -53,3 +55,27 @@ def test_cpu_trainer_writes_resumable_checkpoints(tmp_path: Path) -> None:
     assert resumed_result.epochs_completed == 1
     assert resumed_result.best_epoch == result.best_epoch
     assert resumed_result.best_validation_loss == result.best_validation_loss
+
+
+def test_provenance_includes_pseudo_depth_metadata(tmp_path: Path) -> None:
+    config = load_config(Path("configs/experiments/smoke.yaml"))
+    depth_root = tmp_path / "depth"
+    depth_root.mkdir()
+    (depth_root / "provenance.json").write_text(
+        json.dumps(
+            {
+                "contract_sha256": "contract",
+                "generation_sha256": "generation",
+                "checkpoint_sha256": "checkpoint",
+            }
+        )
+    )
+    config = config.model_copy(
+        update={"paths": config.paths.model_copy(update={"depth_root": depth_root})}
+    )
+
+    metadata = provenance(config, PseudoDepthValidation(10, "targets"))
+
+    assert metadata["pseudo_depth_targets"] == "10"
+    assert metadata["pseudo_depth_sha256"] == "targets"
+    assert metadata["pseudo_depth_checkpoint_sha256"] == "checkpoint"

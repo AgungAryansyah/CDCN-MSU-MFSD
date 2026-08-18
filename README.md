@@ -80,8 +80,15 @@ use the external PRNet contract described in [the PRNet guide](docs/PRNET_CONTRA
 
 ```bash
 uv run --extra cu130 cdcn-msu export-prnet cache/prnet-export
+```
+
+Run PRNet on the images in `cache/prnet-export/inputs` and write its depth maps
+directly to `cache/prnet-output`, preserving every exported filename stem. Then
+import those generated maps:
+
+```bash
 uv run --extra cu130 cdcn-msu import-prnet \
-  cache/prnet-export/contract.jsonl /path/to/prnet/outputs
+  cache/prnet-export/contract.jsonl cache/prnet-output
 ```
 
 ## Training and experiments

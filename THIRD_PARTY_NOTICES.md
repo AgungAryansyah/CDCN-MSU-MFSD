@@ -35,3 +35,23 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## PRNet artifacts
+
+The optional PRNet preparation command downloads `latest.pth` and
+`face_ind.txt` at runtime from:
+
+- Repository: <https://github.com/tomguluson92/PRNet_PyTorch>
+- Pinned revision: `2d30e244855a043eec071baf78e8edbab9c11c78`
+
+The downloaded files are not included in this Git repository. The upstream
+repository does not declare a license for those artifacts at the pinned
+revision. Users are responsible for confirming that their use and any
+redistribution comply with the artifact owners' terms.
+
+The PRNet architecture originates from the paper and official implementation:
+
+- Paper: *Joint 3D Face Reconstruction and Dense Alignment with Position Map
+  Regression Network*
+- Repository: <https://github.com/YadiraF/PRNet>
+- License: MIT

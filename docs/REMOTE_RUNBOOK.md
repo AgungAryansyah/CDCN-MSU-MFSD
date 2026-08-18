@@ -36,7 +36,7 @@ paths are ignored by Git.
 
 1. `cdcn-msu inspect-data`
 2. `cdcn-msu prepare`
-3. Export/run/import PRNet if pseudo-depth experiments are required.
+3. Run `cdcn-msu prepare-prnet` if pseudo-depth experiments are required.
 4. Dry-run each matrix and review its resolved run count.
 5. Run the main matrix and ablations sequentially on the single GPU.
 6. Aggregate five validation folds separately for each model/supervision/seed.
@@ -47,6 +47,10 @@ The default batch size is 8 with effective batch size 16. W&B and the local
 epoch log record peak reserved GPU memory. The acceptance ceiling is 11 GiB;
 reduce only `training.batch_size` and increase `training.gradient_accumulation`
 proportionally if the remote process exceeds it.
+
+PRNet inference has a separate `prnet.batch_size` setting, defaulting to 16.
+Reducing it does not affect the training batch size or experiment definition.
+Interrupted PRNet generation can be resumed by rerunning `prepare-prnet`.
 
 ## Recovery
 

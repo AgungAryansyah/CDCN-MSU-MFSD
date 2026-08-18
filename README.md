@@ -75,21 +75,33 @@ requires `ffmpeg`; `cdcn-msu doctor` reports the availability of both programs.
 Generated data is written under ignored `cache/`. The decoder honors FFmpeg
 display rotation before applying the dataset's display-space `.face` boxes.
 
-Binary targets require no additional preprocessing. For pseudo-depth targets,
-use the external PRNet contract described in [the PRNet guide](docs/PRNET_CONTRACT.md):
+Binary targets require no additional preprocessing. MSU-MFSD does not include
+facial depth maps, so pseudo-depth experiments use PRNet to create them for
+genuine frames. The integrated command downloads the pinned public artifacts,
+exports aligned crops, runs batched inference, and imports the 32×32 targets:
 
 ```bash
-uv run --extra cu130 cdcn-msu export-prnet cache/prnet-export
+uv run --extra cu130 cdcn-msu prepare-prnet
 ```
 
-Run PRNet on the images in `cache/prnet-export/inputs` and write its depth maps
-directly to `cache/prnet-output`, preserving every exported filename stem. Then
-import those generated maps:
+The command is resumable: valid files in `cache/prnet-output/` are skipped, and
+invalid or incomplete files are regenerated. The imported targets and their
+provenance are stored under `cache/depth/`. Training with
+`supervision.kind=pseudo_depth` performs a complete target preflight before it
+creates a run.
+
+The individual stages remain available for inspection or recovery:
 
 ```bash
+uv run --extra cu130 cdcn-msu fetch-prnet
+uv run --extra cu130 cdcn-msu export-prnet cache/prnet-export
+uv run --extra cu130 cdcn-msu generate-prnet
 uv run --extra cu130 cdcn-msu import-prnet \
   cache/prnet-export/contract.jsonl cache/prnet-output
 ```
+
+See [the PRNet guide](docs/PRNET_CONTRACT.md) for the model’s role, artifact
+policy, output contract, and recovery options.
 
 ## Training and experiments
 

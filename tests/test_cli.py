@@ -20,6 +20,7 @@ def test_doctor_reports_torch_runtime() -> None:
     assert '"cuda_available"' in result.stdout
     assert '"ffmpeg_available"' in result.stdout
     assert '"ffprobe_available"' in result.stdout
+    assert '"prnet"' in result.stdout
     assert '"torch": "2.11.0' in result.stdout
 
 

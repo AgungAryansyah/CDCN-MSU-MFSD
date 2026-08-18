@@ -28,6 +28,11 @@ from cdcn_msu_mfsd.experiments import (
     run_matrix,
     run_refit_test,
 )
+from cdcn_msu_mfsd.prnet_artifacts import (
+    artifact_reports_json,
+    fetch_prnet_artifacts,
+    prnet_artifact_status,
+)
 from cdcn_msu_mfsd.training import output_directory, run_training
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
@@ -45,14 +50,20 @@ def version() -> None:
 
 
 @app.command()
-def doctor(require_cuda: Annotated[bool, typer.Option()] = False) -> None:
+def doctor(
+    require_cuda: Annotated[bool, typer.Option()] = False,
+    config_path: Path = Path("configs/base.yaml"),
+    override: Overrides = None,
+) -> None:
     cuda_available = torch.cuda.is_available()
+    config = load_config(config_path, override)
     report: dict[str, object] = {
         "torch": torch.__version__,
         "cuda_build": torch.version.cuda,
         "cuda_available": cuda_available,
         "ffmpeg_available": shutil.which("ffmpeg") is not None,
         "ffprobe_available": shutil.which("ffprobe") is not None,
+        "prnet": prnet_artifact_status(config.prnet),
     }
     if cuda_available:
         properties = torch.cuda.get_device_properties(0)
@@ -66,6 +77,16 @@ def doctor(require_cuda: Annotated[bool, typer.Option()] = False) -> None:
     _echo(report)
     if require_cuda and not cuda_available:
         raise typer.Exit(1)
+
+
+@app.command("fetch-prnet")
+def fetch_prnet(
+    config_path: Path = Path("configs/base.yaml"),
+    override: Overrides = None,
+    force: Annotated[bool, typer.Option()] = False,
+) -> None:
+    config = load_config(config_path, override)
+    _echo({"artifacts": artifact_reports_json(fetch_prnet_artifacts(config.prnet, force))})
 
 
 @app.command("inspect-data")

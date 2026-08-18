@@ -17,6 +17,14 @@ model:
   theta: 0.7
 supervision:
   kind: binary
+prnet:
+  model_root: cache/prnet-model
+  export_root: cache/prnet-export
+  output_root: cache/prnet-output
+  batch_size: 16
+  workers: 4
+  device: auto
+  amp: false
 loss:
   absolute_weight: 1.0
   contrastive_weight: 1.0

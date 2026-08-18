@@ -44,6 +44,16 @@ class SupervisionConfig(StrictModel):
     kind: Literal["binary", "pseudo_depth"] = "binary"
 
 
+class PRNetConfig(StrictModel):
+    model_root: Path = Path("cache/prnet-model")
+    export_root: Path = Path("cache/prnet-export")
+    output_root: Path = Path("cache/prnet-output")
+    batch_size: int = Field(default=16, gt=0)
+    workers: int = Field(default=4, ge=0)
+    device: Literal["auto", "cpu", "cuda"] = "auto"
+    amp: bool = False
+
+
 class LossConfig(StrictModel):
     absolute_weight: float = Field(default=1.0, ge=0)
     contrastive_weight: float = Field(default=1.0, ge=0)
@@ -91,6 +101,7 @@ class Config(StrictModel):
     data: DataConfig = DataConfig()
     model: ModelConfig = ModelConfig()
     supervision: SupervisionConfig = SupervisionConfig()
+    prnet: PRNetConfig = PRNetConfig()
     loss: LossConfig = LossConfig()
     optimizer: OptimizerConfig = OptimizerConfig()
     scheduler: SchedulerConfig = SchedulerConfig()

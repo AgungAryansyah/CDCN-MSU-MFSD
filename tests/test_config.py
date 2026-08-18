@@ -11,6 +11,8 @@ def test_loads_composed_config() -> None:
     assert config.experiment.phase == "smoke"
     assert config.training.epochs == 1
     assert config.model.name == "cdcn"
+    assert config.prnet.batch_size == 16
+    assert config.prnet.model_root == Path("cache/prnet-model")
 
 
 def test_cli_override_changes_hash() -> None:

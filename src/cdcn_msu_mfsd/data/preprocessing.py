@@ -40,6 +40,10 @@ class FrameRecord:
     bottom: int
 
 
+class FrameDecodeError(ValueError):
+    pass
+
+
 def load_annotations(path: Path) -> list[FaceAnnotation]:
     annotations = []
     for line_number, line in enumerate(path.read_text().splitlines(), start=1):
@@ -123,7 +127,7 @@ def decode_frame(video_path: Path, frame_index: int) -> Image.Image:
     ]
     result = subprocess.run(command, check=True, capture_output=True)
     if not result.stdout:
-        raise ValueError(f"FFmpeg did not decode frame {frame_index} from {video_path}")
+        raise FrameDecodeError(f"FFmpeg did not decode frame {frame_index} from {video_path}")
     with Image.open(io.BytesIO(result.stdout)) as image:
         return image.convert("RGB")
 
@@ -139,14 +143,39 @@ def prepare_frames(
     selected_records = records[:limit] if limit is not None else records
     for video in selected_records:
         annotations = load_annotations(dataset_root / video.annotation_path)
-        for annotation in select_uniform(annotations, candidates_per_video):
-            relative_path = Path("frames") / video.video_id / f"{annotation.frame_index:06d}.jpg"
-            destination = cache_root / relative_path
-            if not destination.exists():
-                frame = decode_frame(dataset_root / video.video_path, annotation.frame_index)
+        selected_annotations = select_uniform(annotations, candidates_per_video)
+        reserved_indices = {annotation.frame_index for annotation in selected_annotations}
+        for selected_annotation in selected_annotations:
+            annotation = selected_annotation
+            while True:
+                relative_path = (
+                    Path("frames") / video.video_id / f"{annotation.frame_index:06d}.jpg"
+                )
+                destination = cache_root / relative_path
+                if destination.exists():
+                    break
+                try:
+                    frame = decode_frame(dataset_root / video.video_path, annotation.frame_index)
+                except FrameDecodeError:
+                    replacement = next(
+                        (
+                            candidate
+                            for candidate in reversed(annotations)
+                            if candidate.frame_index < annotation.frame_index
+                            and candidate.frame_index not in reserved_indices
+                        ),
+                        None,
+                    )
+                    if replacement is None:
+                        raise
+                    annotation = replacement
+                    continue
                 crop_box(annotation, frame.width, frame.height, 1.0)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 frame.save(destination, quality=95)
+                break
+            reserved_indices.discard(selected_annotation.frame_index)
+            reserved_indices.add(annotation.frame_index)
             frame_records.append(
                 FrameRecord(
                     video_id=video.video_id,

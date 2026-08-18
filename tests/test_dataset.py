@@ -1,11 +1,18 @@
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from cdcn_msu_mfsd.data.dataset import MSUMFSDDataset
 from cdcn_msu_mfsd.data.preprocessing import FrameRecord
-from cdcn_msu_mfsd.data.supervision import BinaryTarget, PseudoDepthTarget, import_prnet_outputs
+from cdcn_msu_mfsd.data.supervision import (
+    BinaryTarget,
+    PseudoDepthTarget,
+    import_prnet_outputs,
+    validate_pseudo_depth_targets,
+)
 
 
 def _record(label: int = 1) -> FrameRecord:
@@ -61,3 +68,38 @@ def test_imported_prnet_target_is_normalized(tmp_path: Path) -> None:
     target = PseudoDepthTarget(depth_root)(_record())
     assert target.shape == (32, 32)
     assert 0.0 <= target.min().item() <= target.max().item() <= 1.0
+
+
+def test_import_validates_all_sources_before_writing(tmp_path: Path) -> None:
+    output_root = tmp_path / "outputs"
+    output_root.mkdir()
+    np.save(output_root / "video__000000.npy", np.ones((32, 32), dtype=np.float32))
+    contract = tmp_path / "contract.jsonl"
+    contract.write_text(
+        '{"frame_index": 0, "input_path": "first.png", '
+        '"output_stem": "video__000000", "video_id": "video"}\n'
+        '{"frame_index": 1, "input_path": "second.png", '
+        '"output_stem": "video__000001", "video_id": "video"}\n'
+    )
+    depth_root = tmp_path / "depth"
+
+    with pytest.raises(FileNotFoundError, match="video__000001"):
+        import_prnet_outputs(contract, output_root, depth_root)
+
+    assert not depth_root.exists()
+
+
+def test_pseudo_depth_preflight_hashes_genuine_targets(tmp_path: Path) -> None:
+    record = _record()
+    destination = tmp_path / record.video_id / "000000.npy"
+    destination.parent.mkdir(parents=True)
+    np.save(destination, np.ones((32, 32), dtype=np.float32))
+
+    validation = validate_pseudo_depth_targets([record, _record(0)], tmp_path)
+
+    assert validation.targets == 1
+    assert len(validation.sha256) == 64
+
+    np.save(destination, np.zeros((32, 32), dtype=np.float32))
+    with pytest.raises(ValueError, match="1 invalid"):
+        validate_pseudo_depth_targets([replace(record, frame_index=0)], tmp_path)

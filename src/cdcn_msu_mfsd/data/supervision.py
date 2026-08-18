@@ -1,4 +1,7 @@
+import hashlib
 import json
+import os
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -39,6 +42,12 @@ class PRNetRecord:
     frame_index: int
     input_path: str
     output_stem: str
+
+
+@dataclass(frozen=True)
+class PseudoDepthValidation:
+    targets: int
+    sha256: str
 
 
 def export_prnet_inputs(
@@ -93,8 +102,66 @@ def _load_depth(path: Path) -> np.ndarray:
     return np.asarray(depth_image, dtype=np.float32)
 
 
+def _atomic_save_depth(path: Path, depth: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as file:
+        temporary = Path(file.name)
+        np.save(file, depth)
+    os.replace(temporary, path)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_pseudo_depth_targets(
+    records: list[FrameRecord], depth_root: Path
+) -> PseudoDepthValidation:
+    genuine_records = [record for record in records if record.label == 1]
+    missing = []
+    invalid = []
+    digest = hashlib.sha256()
+    for record in genuine_records:
+        path = depth_root / record.video_id / f"{record.frame_index:06d}.npy"
+        if not path.exists():
+            missing.append(path)
+            continue
+        try:
+            depth = np.load(path, allow_pickle=False)
+        except (OSError, ValueError):
+            invalid.append(path)
+            continue
+        if (
+            depth.shape != (32, 32)
+            or not np.isfinite(depth).all()
+            or float(depth.min()) < 0.0
+            or float(depth.max()) > 1.0
+            or float(depth.max()) <= 0.0
+        ):
+            invalid.append(path)
+            continue
+        digest.update(f"{record.video_id}/{record.frame_index:06d}\0".encode())
+        digest.update(bytes.fromhex(_sha256(path)))
+    if missing or invalid:
+        examples = [str(path) for path in [*missing, *invalid][:3]]
+        details = ", ".join(examples)
+        raise ValueError(
+            f"Pseudo-depth preflight failed: {len(missing)} missing, {len(invalid)} invalid. "
+            f"Examples: {details}. Run `cdcn-msu prepare-prnet`."
+        )
+    if not genuine_records:
+        raise ValueError("Pseudo-depth preflight found no genuine frame records")
+    return PseudoDepthValidation(len(genuine_records), digest.hexdigest())
+
+
 def import_prnet_outputs(contract_path: Path, output_root: Path, depth_root: Path) -> int:
-    imported = 0
+    imports: list[tuple[PRNetRecord, np.ndarray]] = []
     for line in contract_path.read_text().splitlines():
         if not line:
             continue
@@ -105,8 +172,20 @@ def import_prnet_outputs(contract_path: Path, output_root: Path, depth_root: Pat
         source = next((path for path in candidates if path.exists()), None)
         if source is None:
             raise FileNotFoundError(f"Missing PRNet output for {record.output_stem}")
+        imports.append((record, _load_depth(source)))
+    for record, depth in imports:
         destination = depth_root / record.video_id / f"{record.frame_index:06d}.npy"
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        np.save(destination, _load_depth(source))
-        imported += 1
-    return imported
+        _atomic_save_depth(destination, depth)
+    generation_path = output_root / "generation.json"
+    generation = json.loads(generation_path.read_text()) if generation_path.exists() else {}
+    provenance: dict[str, str | int | None] = {
+        "contract_sha256": _sha256(contract_path),
+        "generation_sha256": _sha256(generation_path) if generation_path.exists() else None,
+        "checkpoint_sha256": generation.get("checkpoint_sha256"),
+        "imported": len(imports),
+    }
+    depth_root.mkdir(parents=True, exist_ok=True)
+    (depth_root / "provenance.json").write_text(
+        json.dumps(provenance, indent=2, sort_keys=True) + "\n"
+    )
+    return len(imports)

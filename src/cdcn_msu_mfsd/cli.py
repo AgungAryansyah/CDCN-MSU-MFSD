@@ -1,5 +1,6 @@
 import json
 import shutil
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
 
@@ -33,6 +34,7 @@ from cdcn_msu_mfsd.prnet_artifacts import (
     fetch_prnet_artifacts,
     prnet_artifact_status,
 )
+from cdcn_msu_mfsd.prnet_generation import generate_prnet_outputs
 from cdcn_msu_mfsd.training import output_directory, run_training
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
@@ -157,6 +159,50 @@ def import_prnet(
     config = load_config(config_path, override)
     imported = import_prnet_outputs(contract, output_root, config.paths.depth_root)
     _echo({"imported": imported, "depth_root": config.paths.depth_root})
+
+
+@app.command("generate-prnet")
+def generate_prnet(
+    config_path: Path = Path("configs/base.yaml"),
+    override: Overrides = None,
+    contract: OptionalPath = None,
+    limit: Annotated[int | None, typer.Option(min=1)] = None,
+) -> None:
+    config = load_config(config_path, override)
+    contract_path = contract or config.prnet.export_root / "contract.jsonl"
+    report = generate_prnet_outputs(contract_path, config.prnet, limit)
+    _echo(asdict(report))
+
+
+@app.command("prepare-prnet")
+def prepare_prnet(
+    config_path: Path = Path("configs/base.yaml"),
+    override: Overrides = None,
+    force_download: Annotated[bool, typer.Option()] = False,
+) -> None:
+    config = load_config(config_path, override)
+    artifacts = fetch_prnet_artifacts(config.prnet, force_download)
+    records = load_frame_records(config.paths.cache_root / "frames.jsonl")
+    contract = export_prnet_inputs(
+        records,
+        config.paths.cache_root,
+        config.prnet.export_root,
+        config.data.crop_scale,
+    )
+    contract_path = config.prnet.export_root / "contract.jsonl"
+    generation = generate_prnet_outputs(contract_path, config.prnet)
+    imported = import_prnet_outputs(
+        contract_path, config.prnet.output_root, config.paths.depth_root
+    )
+    _echo(
+        {
+            "artifacts": artifact_reports_json(artifacts),
+            "exported": len(contract),
+            "generation": asdict(generation),
+            "imported": imported,
+            "depth_root": config.paths.depth_root,
+        }
+    )
 
 
 @app.command()

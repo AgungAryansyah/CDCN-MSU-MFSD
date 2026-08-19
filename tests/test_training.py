@@ -1,15 +1,17 @@
 import json
 from pathlib import Path
 
+import pytest
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
+from cdcn_msu_mfsd import evaluation, training
 from cdcn_msu_mfsd.config import load_config
 from cdcn_msu_mfsd.data.supervision import PseudoDepthValidation
 from cdcn_msu_mfsd.tracking import MetricsTracker
-from cdcn_msu_mfsd.training import Trainer, provenance
+from cdcn_msu_mfsd.training import Trainer, provenance, run_training
 
 
 class TinyDataset(Dataset[dict[str, object]]):
@@ -79,3 +81,47 @@ def test_provenance_includes_pseudo_depth_metadata(tmp_path: Path) -> None:
     assert metadata["pseudo_depth_targets"] == "10"
     assert metadata["pseudo_depth_sha256"] == "targets"
     assert metadata["pseudo_depth_checkpoint_sha256"] == "checkpoint"
+
+
+def test_training_logs_best_checkpoint_pad_metrics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_config(
+        Path("configs/experiments/smoke.yaml"),
+        ["runtime.device=cpu", "runtime.amp=false", "tracking.log_every_steps=1"],
+    )
+    config = config.model_copy(
+        update={"paths": config.paths.model_copy(update={"output_root": tmp_path / "outputs"})}
+    )
+    loader = DataLoader(TinyDataset(), batch_size=2)
+    monkeypatch.setattr(training, "make_dataloaders", lambda *_: (loader, loader))
+    monkeypatch.setattr(training, "build_model", lambda *_: TinyModel())
+    monkeypatch.setattr(
+        training,
+        "create_tracker",
+        lambda _config, output_dir, _provenance: MetricsTracker(output_dir / "metrics.jsonl"),
+    )
+    monkeypatch.setattr(
+        evaluation,
+        "evaluate_checkpoint",
+        lambda *_: {
+            "acer": 0.15,
+            "apcer": 0.1,
+            "bpcer": 0.2,
+            "eer": 0.12,
+            "auc": 0.93,
+            "accuracy": 0.85,
+            "threshold": 0.47,
+            "false_accepts": 2,
+            "false_rejects": 1,
+            "genuine": 5,
+            "attacks": 20,
+        },
+    )
+
+    result = run_training(config)
+    summary = json.loads((result.output_dir / "summary.json").read_text())
+
+    assert summary["validation/acer"] == 0.15
+    assert summary["validation/roc_auc"] == 0.93
+    assert summary["validation/confusion/false_positive"] == 2

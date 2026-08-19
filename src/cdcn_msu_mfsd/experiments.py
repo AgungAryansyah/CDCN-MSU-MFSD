@@ -2,7 +2,7 @@ import itertools
 import json
 import statistics
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,7 +23,7 @@ from cdcn_msu_mfsd.evaluation import (
     select_threshold,
 )
 from cdcn_msu_mfsd.models import build_model
-from cdcn_msu_mfsd.tracking import create_tracker
+from cdcn_msu_mfsd.tracking import create_tracker, evaluation_metrics
 from cdcn_msu_mfsd.training import (
     Trainer,
     output_directory,
@@ -97,7 +97,6 @@ def run_matrix(path: Path, dry_run: bool = False) -> list[dict[str, Any]]:
         else:
             resume = output_dir / "last.pt"
             result = run_training(config, resume if resume.exists() else None)
-            evaluate_checkpoint(config, output_dir / "best.pt", "validation", output_dir)
             record.update(
                 {
                     "status": "completed",
@@ -148,7 +147,7 @@ def median_best_epoch(summary_paths: list[Path]) -> int:
     return max(1, round(statistics.median(epochs)))
 
 
-def run_refit(config: Config, epochs: int) -> Path:
+def run_refit(config: Config, epochs: int, threshold: float | None = None) -> Path:
     config = config.model_copy(
         update={"training": config.training.model_copy(update={"epochs": epochs})}
     )
@@ -228,7 +227,19 @@ def run_refit(config: Config, epochs: int) -> Path:
                 trainer.scaler,
                 config,
             )
-        tracker.summary({"refit_epochs": epochs})
+        summary: dict[str, int | float] = {"refit_epochs": epochs}
+        if threshold is not None:
+            report = evaluate_checkpoint(
+                config,
+                output_dir / "final.pt",
+                "test",
+                output_dir,
+                threshold,
+            )
+            test_metrics = evaluation_metrics("test", report)
+            tracker.log(test_metrics)
+            summary.update(test_metrics)
+        tracker.summary(summary)
     finally:
         tracker.finish()
     return output_dir / "final.pt"
@@ -238,5 +249,5 @@ def run_refit_test(config: Config, epochs: int, threshold: float) -> dict[str, A
     config = config.model_copy(
         update={"training": config.training.model_copy(update={"epochs": epochs})}
     )
-    checkpoint = run_refit(config, epochs)
-    return evaluate_checkpoint(config, checkpoint, "test", checkpoint.parent, threshold)
+    checkpoint = run_refit(config, epochs, threshold)
+    return cast(dict[str, Any], json.loads((checkpoint.parent / "test_metrics.json").read_text()))

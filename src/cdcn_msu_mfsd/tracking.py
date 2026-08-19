@@ -41,7 +41,9 @@ class MetricsTracker:
 
     def summary(self, metrics: Mapping[str, int | float | str]) -> None:
         path = self.local_path.with_name("summary.json")
-        path.write_text(json.dumps(dict(metrics), indent=2, sort_keys=True) + "\n")
+        existing = json.loads(path.read_text()) if path.exists() else {}
+        existing.update(metrics)
+        path.write_text(json.dumps(existing, indent=2, sort_keys=True) + "\n")
         if self.run is not None:
             try:
                 self.run.summary.update(dict(metrics))
@@ -54,6 +56,28 @@ class MetricsTracker:
                 self.run.finish()
             except Exception as error:
                 warnings.warn(f"W&B finish failed: {error}", stacklevel=2)
+
+
+def evaluation_metrics(split: str, report: Mapping[str, Any]) -> dict[str, int | float]:
+    false_positive = int(report["false_accepts"])
+    false_negative = int(report["false_rejects"])
+    genuine = int(report["genuine"])
+    attacks = int(report["attacks"])
+    return {
+        f"{split}/acer": float(report["acer"]),
+        f"{split}/apcer": float(report["apcer"]),
+        f"{split}/bpcer": float(report["bpcer"]),
+        f"{split}/eer": float(report["eer"]),
+        f"{split}/roc_auc": float(report["auc"]),
+        f"{split}/accuracy": float(report["accuracy"]),
+        f"{split}/threshold": float(report["threshold"]),
+        f"{split}/confusion/true_positive": genuine - false_negative,
+        f"{split}/confusion/true_negative": attacks - false_positive,
+        f"{split}/confusion/false_positive": false_positive,
+        f"{split}/confusion/false_negative": false_negative,
+        f"{split}/count/genuine": genuine,
+        f"{split}/count/attack": attacks,
+    }
 
 
 def create_tracker(

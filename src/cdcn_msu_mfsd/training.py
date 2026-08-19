@@ -25,7 +25,7 @@ from cdcn_msu_mfsd.data.supervision import (
 )
 from cdcn_msu_mfsd.losses import DepthLoss
 from cdcn_msu_mfsd.models import build_model
-from cdcn_msu_mfsd.tracking import MetricsTracker, create_tracker
+from cdcn_msu_mfsd.tracking import MetricsTracker, create_tracker, evaluation_metrics
 
 
 @dataclass(frozen=True)
@@ -454,6 +454,13 @@ def run_training(config: Config, resume: Path | None = None) -> TrainingResult:
             tracker,
             device,
         )
-        return trainer.fit(output_dir, resume)
+        result = trainer.fit(output_dir, resume)
+        from cdcn_msu_mfsd.evaluation import evaluate_checkpoint
+
+        report = evaluate_checkpoint(config, output_dir / "best.pt", "validation", output_dir)
+        pad_metrics = evaluation_metrics("validation", report)
+        tracker.log(pad_metrics)
+        tracker.summary(pad_metrics)
+        return result
     finally:
         tracker.finish()

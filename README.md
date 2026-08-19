@@ -45,6 +45,12 @@ and system telemetry only. Videos, frames, depth maps, predictions, and model
 checkpoints remain local. Set `WANDB_MODE=offline` for an unreliable connection
 or `disabled` for local-only operation.
 
+Training history includes batch and epoch depth losses, validation loss,
+learning rate, and peak GPU memory. After training, the best checkpoint adds
+video-level `acer`, `apcer`, `bpcer`, `eer`, `roc_auc`, `accuracy`, `threshold`,
+TP, TN, FP, FN, and class counts to both W&B history and the run summary. Refit
+runs log the same metrics under `test/` using the frozen validation threshold.
+
 ## Data preparation
 
 The runtime dataset is stored inside the project so the directory can be moved

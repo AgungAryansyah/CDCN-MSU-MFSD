@@ -8,7 +8,11 @@ from PIL import Image
 from torch import Tensor, nn
 
 from cdcn_msu_mfsd.config import PRNetConfig
-from cdcn_msu_mfsd.prnet_generation import generate_prnet_outputs, rasterize_prnet_depth
+from cdcn_msu_mfsd.prnet_generation import (
+    generate_prnet_outputs,
+    load_prnet_face_indices,
+    rasterize_prnet_depth,
+)
 
 
 class FakePRNet(nn.Module):
@@ -30,6 +34,24 @@ def test_rasterizes_position_map_to_normalized_depth() -> None:
     assert torch.isfinite(depth).all()
     assert depth.min() >= 0
     assert depth.max() == pytest.approx(1.0)
+
+
+def test_loads_scientific_notation_face_indices(tmp_path: Path) -> None:
+    path = tmp_path / "face_ind.txt"
+    path.write_text("1.285000000000000000e+03\n6.553500000000000000e+04\n")
+
+    indices = load_prnet_face_indices(path, torch.device("cpu"))
+
+    assert indices.dtype == torch.int64
+    assert indices.tolist() == [1285, 65535]
+
+
+def test_rejects_fractional_face_indices(tmp_path: Path) -> None:
+    path = tmp_path / "face_ind.txt"
+    path.write_text("1.5\n")
+
+    with pytest.raises(ValueError, match="finite integers"):
+        load_prnet_face_indices(path, torch.device("cpu"))
 
 
 def test_generation_resumes_and_replaces_invalid_outputs(

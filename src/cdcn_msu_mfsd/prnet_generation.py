@@ -88,6 +88,17 @@ def rasterize_prnet_depth(position_maps: Tensor, face_indices: Tensor) -> Tensor
     return depth / maximum
 
 
+def load_prnet_face_indices(path: Path, device: torch.device) -> Tensor:
+    values = np.loadtxt(path, dtype=np.float64, ndmin=1)
+    rounded = np.rint(values)
+    if not np.isfinite(values).all() or not np.array_equal(values, rounded):
+        raise ValueError(f"PRNet face indices must be finite integers: {path}")
+    indices = torch.from_numpy(rounded.astype(np.int64, copy=False)).flatten().to(device)
+    if indices.numel() == 0 or int(indices.min()) < 0 or int(indices.max()) >= 256**2:
+        raise ValueError(f"Invalid PRNet face indices: {path}")
+    return indices
+
+
 def _valid_depth(path: Path) -> bool:
     try:
         depth = np.load(path, allow_pickle=False)
@@ -155,15 +166,7 @@ def generate_prnet_outputs(
     device = resolve_prnet_device(config.device)
     inference_model = model or load_prnet_checkpoint(artifacts["checkpoint"], device)
     inference_model.eval().to(device)
-    face_indices = (
-        torch.from_numpy(np.loadtxt(artifacts["face_indices"], dtype=np.int64)).flatten().to(device)
-    )
-    if (
-        face_indices.numel() == 0
-        or int(face_indices.min()) < 0
-        or int(face_indices.max()) >= 256**2
-    ):
-        raise ValueError(f"Invalid PRNet face indices: {artifacts['face_indices']}")
+    face_indices = load_prnet_face_indices(artifacts["face_indices"], device)
 
     dataset = PRNetInputDataset(pending, contract_path.parent)
     loader = DataLoader(

@@ -69,6 +69,7 @@ def evaluation_metrics(split: str, report: Mapping[str, Any]) -> dict[str, int |
         f"{split}/bpcer": float(report["bpcer"]),
         f"{split}/eer": float(report["eer"]),
         f"{split}/roc_auc": float(report["auc"]),
+        f"{split}/f1_attack": float(report["f1"]),
         f"{split}/accuracy": float(report["accuracy"]),
         f"{split}/threshold": float(report["threshold"]),
         f"{split}/confusion/true_positive": genuine - false_negative,

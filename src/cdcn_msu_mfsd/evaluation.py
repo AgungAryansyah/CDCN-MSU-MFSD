@@ -128,7 +128,19 @@ def eer(predictions: list[VideoPrediction]) -> float:
 
 def metric_report(predictions: list[VideoPrediction], threshold: float) -> dict[str, Any]:
     report: dict[str, Any] = dict(_rates(predictions, threshold))
-    report.update({"threshold": threshold, "auc": auc(predictions), "eer": eer(predictions)})
+    attack_true_positives = int(report["attacks"]) - int(report["false_accepts"])
+    attack_false_positives = int(report["false_rejects"])
+    attack_false_negatives = int(report["false_accepts"])
+    f1_denominator = 2 * attack_true_positives + attack_false_positives + attack_false_negatives
+    report.update(
+        {
+            "threshold": threshold,
+            "auc": auc(predictions),
+            "eer": eer(predictions),
+            "f1": 2 * attack_true_positives / f1_denominator if f1_denominator else 0.0,
+            "positive_class": "attack",
+        }
+    )
     attacks = sorted({item.attack_type for item in predictions if item.label == 0})
     report["by_attack_type"] = {
         attack: _rates(

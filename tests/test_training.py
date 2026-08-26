@@ -161,6 +161,7 @@ def test_training_logs_best_checkpoint_pad_metrics(
             "bpcer": 0.2,
             "eer": 0.12,
             "auc": 0.93,
+            "f1": 0.8,
             "accuracy": 0.85,
             "threshold": 0.47,
             "false_accepts": 2,
@@ -175,5 +176,6 @@ def test_training_logs_best_checkpoint_pad_metrics(
 
     assert summary["validation/acer"] == 0.15
     assert summary["validation/roc_auc"] == 0.93
+    assert summary["validation/f1_attack"] == 0.8
     assert summary["validation/confusion/false_positive"] == 2
     assert json.loads((result.output_dir / "split.json").read_text())["test_subjects"] == ["003"]

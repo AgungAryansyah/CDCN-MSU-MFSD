@@ -40,6 +40,8 @@ def test_perfect_predictions_have_zero_acer() -> None:
     assert 0.2 < threshold < 0.8
     assert report["acer"] == 0.0
     assert report["eer"] == 0.0
+    assert report["f1"] == 1.0
+    assert report["positive_class"] == "attack"
     assert auc(videos) == 1.0
 
 

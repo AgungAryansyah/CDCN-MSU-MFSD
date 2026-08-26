@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import torch
 
-from cdcn_msu_mfsd.efficiency import benchmark_model
+from cdcn_msu_mfsd.config import load_config
+from cdcn_msu_mfsd.efficiency import EfficiencyReport, benchmark_model, save_efficiency_report
 from cdcn_msu_mfsd.models import CDCN
 
 
@@ -30,3 +33,20 @@ def test_cdc_macs_include_difference_path() -> None:
     )
 
     assert cdc.macs > ordinary.macs
+
+
+def test_efficiency_reports_are_separated_by_device(tmp_path: Path) -> None:
+    config = load_config(Path("configs/experiments/smoke.yaml"))
+    config = config.model_copy(
+        update={"paths": config.paths.model_copy(update={"output_root": tmp_path / "outputs"})}
+    )
+    cpu = EfficiencyReport("cdcn", 1.0, 0.7, "cpu", (1, 3, 256, 256), 1, 1, 1, 1.0, 1.0, 0, 1, {})
+    cuda = EfficiencyReport("cdcn", 1.0, 0.7, "cuda", (1, 3, 256, 256), 1, 1, 1, 1.0, 1.0, 0, 1, {})
+
+    cpu_path = save_efficiency_report(config, cpu)
+    cuda_path = save_efficiency_report(config, cuda)
+
+    assert cpu_path.name == "efficiency_cpu.json"
+    assert cuda_path.name == "efficiency_cuda.json"
+    assert cpu_path.exists()
+    assert cuda_path.exists()

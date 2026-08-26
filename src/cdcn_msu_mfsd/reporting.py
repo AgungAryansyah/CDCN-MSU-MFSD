@@ -122,14 +122,22 @@ def _read_json(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
-def _efficiency(configurations: list[Config]) -> dict[str, Any]:
+def _efficiency_reports(configurations: list[Config]) -> dict[str, dict[str, Any]]:
+    reports: dict[str, dict[str, Any]] = {}
     for config in configurations:
-        path = output_directory(config) / "efficiency.json"
-        if path.exists():
-            return _read_json(path)
-    raise FileNotFoundError(
-        "Missing efficiency report. Run benchmark-matrix before collect-results."
-    )
+        directory = output_directory(config)
+        for path in directory.glob("efficiency_*.json"):
+            report = _read_json(path)
+            reports[str(report["device"]).split(":", maxsplit=1)[0]] = report
+        legacy_path = directory / "efficiency.json"
+        if legacy_path.exists():
+            report = _read_json(legacy_path)
+            reports.setdefault(str(report["device"]).split(":", maxsplit=1)[0], report)
+    if not reports:
+        raise FileNotFoundError(
+            "Missing efficiency report. Run benchmark-matrix before collect-results."
+        )
+    return reports
 
 
 def _write_csv(path: Path, fields: tuple[str, ...], rows: list[dict[str, Any]]) -> None:
@@ -190,11 +198,11 @@ def collect_results(configurations: list[Config], output_csv: Path) -> list[dict
         oof_dir = output_directory(ordered[0]).parents[1] / "oof" / f"seed-{seed}"
         metrics = aggregate_oof(prediction_paths, oof_dir)
         splits = [_read_json(output_directory(config) / "split.json") for config in ordered]
-        efficiency = _efficiency(ordered)
+        efficiencies = _efficiency_reports(ordered)
+        efficiency = efficiencies.get("cpu") or next(iter(efficiencies.values()))
         input_shape = efficiency["input_shape"]
         if not isinstance(input_shape, list) or len(input_shape) != 4:
             raise ValueError("Efficiency report has an invalid input shape")
-        device = str(efficiency["device"])
         row: dict[str, Any] = {
             "experiment_name": ordered[0].experiment.name,
             "architecture": _architecture_label(ordered[0]),
@@ -219,8 +227,8 @@ def collect_results(configurations: list[Config], output_csv: Path) -> list[dict
             "total_parameters": efficiency["total_parameters"],
             "macs": efficiency["macs"],
             "model_state_size_mb": efficiency["model_state_size_mb"],
-            "latency_ms_cpu": efficiency["latency_ms"] if device == "cpu" else None,
-            "latency_ms_gpu": efficiency["latency_ms"] if device == "cuda" else None,
+            "latency_ms_cpu": efficiencies.get("cpu", {}).get("latency_ms"),
+            "latency_ms_gpu": efficiencies.get("cuda", {}).get("latency_ms"),
             "checkpoint_paths": json.dumps(
                 [str(output_directory(config) / "best.pt") for config in ordered]
             ),

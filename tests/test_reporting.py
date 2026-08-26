@@ -65,7 +65,7 @@ def test_collect_results_writes_oof_comparison(tmp_path: Path) -> None:
             )
         )
         (output_dir / "provenance.json").write_text(json.dumps({"git_sha": "test-sha"}))
-        (output_dir / "efficiency.json").write_text(
+        (output_dir / "efficiency_cpu.json").write_text(
             json.dumps(
                 {
                     "device": "cpu",

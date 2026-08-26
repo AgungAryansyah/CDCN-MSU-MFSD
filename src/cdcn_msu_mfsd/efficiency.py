@@ -173,7 +173,8 @@ def benchmark_config(
 
 
 def save_efficiency_report(config: Config, report: EfficiencyReport) -> Path:
-    path = output_directory(config) / "efficiency.json"
+    device_name = report.device.split(":", maxsplit=1)[0]
+    path = output_directory(config) / f"efficiency_{device_name}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(asdict(report), indent=2, sort_keys=True) + "\n")
     return path

@@ -82,16 +82,16 @@ def _rates(predictions: list[VideoPrediction], threshold: float) -> dict[str, fl
 
 
 def auc(predictions: list[VideoPrediction]) -> float:
-    genuine = [item.score for item in predictions if item.label == 1]
-    attacks = [item.score for item in predictions if item.label == 0]
-    if not genuine or not attacks:
+    attack_scores = [-item.score for item in predictions if item.label == 0]
+    bona_fide_scores = [-item.score for item in predictions if item.label == 1]
+    if not bona_fide_scores or not attack_scores:
         raise ValueError("AUC requires both classes")
     favorable = sum(
-        float(genuine_score > attack_score) + 0.5 * float(genuine_score == attack_score)
-        for genuine_score in genuine
-        for attack_score in attacks
+        float(attack_score > bona_fide_score) + 0.5 * float(attack_score == bona_fide_score)
+        for attack_score in attack_scores
+        for bona_fide_score in bona_fide_scores
     )
-    return favorable / (len(genuine) * len(attacks))
+    return favorable / (len(attack_scores) * len(bona_fide_scores))
 
 
 def candidate_thresholds(predictions: list[VideoPrediction]) -> list[float]:

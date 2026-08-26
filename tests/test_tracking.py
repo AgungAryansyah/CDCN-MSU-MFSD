@@ -37,6 +37,7 @@ def test_evaluation_metrics_include_pad_rates_and_confusion() -> None:
             "bpcer": 0.2,
             "eer": 0.12,
             "auc": 0.93,
+            "f1": 0.8,
             "accuracy": 0.85,
             "threshold": 0.47,
             "false_accepts": 2,
@@ -47,6 +48,7 @@ def test_evaluation_metrics_include_pad_rates_and_confusion() -> None:
     )
 
     assert metrics["validation/roc_auc"] == 0.93
+    assert metrics["validation/f1_attack"] == 0.8
     assert metrics["validation/confusion/true_positive"] == 4
     assert metrics["validation/confusion/true_negative"] == 18
     assert metrics["validation/confusion/false_positive"] == 2

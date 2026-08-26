@@ -62,6 +62,12 @@ class SpatialAttention(nn.Module):
 ConvFactory = Callable[..., nn.Module]
 
 
+def scale_channels(base_channels: int, width_multiplier: float) -> int:
+    if width_multiplier <= 0:
+        raise ValueError("width_multiplier must be positive")
+    return max(1, int(round(base_channels * width_multiplier)))
+
+
 def _layer(
     conv: ConvFactory,
     in_channels: int,
@@ -76,31 +82,41 @@ def _layer(
 
 
 class CDCN(nn.Module):
-    def __init__(self, theta: float = 0.7, conv: ConvFactory = CentralDifferenceConv2d) -> None:
+    def __init__(
+        self,
+        theta: float = 0.7,
+        conv: ConvFactory = CentralDifferenceConv2d,
+        width_multiplier: float = 1.0,
+    ) -> None:
         super().__init__()
-        self.stem = _layer(conv, 3, 64, theta)
+        stem_channels = scale_channels(64, width_multiplier)
+        block_channels = scale_channels(128, width_multiplier)
+        expanded_channels = scale_channels(196, width_multiplier)
+        fusion_channels = scale_channels(128, width_multiplier)
+        head_channels = scale_channels(64, width_multiplier)
+        self.stem = _layer(conv, 3, stem_channels, theta)
         self.block1 = nn.Sequential(
-            _layer(conv, 64, 128, theta),
-            _layer(conv, 128, 196, theta),
-            _layer(conv, 196, 128, theta),
+            _layer(conv, stem_channels, block_channels, theta),
+            _layer(conv, block_channels, expanded_channels, theta),
+            _layer(conv, expanded_channels, block_channels, theta),
             nn.MaxPool2d(3, stride=2, padding=1),
         )
         self.block2 = nn.Sequential(
-            _layer(conv, 128, 128, theta),
-            _layer(conv, 128, 196, theta),
-            _layer(conv, 196, 128, theta),
+            _layer(conv, block_channels, block_channels, theta),
+            _layer(conv, block_channels, expanded_channels, theta),
+            _layer(conv, expanded_channels, block_channels, theta),
             nn.MaxPool2d(3, stride=2, padding=1),
         )
         self.block3 = nn.Sequential(
-            _layer(conv, 128, 128, theta),
-            _layer(conv, 128, 196, theta),
-            _layer(conv, 196, 128, theta),
+            _layer(conv, block_channels, block_channels, theta),
+            _layer(conv, block_channels, expanded_channels, theta),
+            _layer(conv, expanded_channels, block_channels, theta),
             nn.MaxPool2d(3, stride=2, padding=1),
         )
         self.head = nn.Sequential(
-            _layer(conv, 384, 128, theta),
-            _layer(conv, 128, 64, theta),
-            conv(64, 1, kernel_size=3, padding=1, bias=False, theta=theta),
+            _layer(conv, 3 * block_channels, fusion_channels, theta),
+            _layer(conv, fusion_channels, head_channels, theta),
+            conv(head_channels, 1, kernel_size=3, padding=1, bias=False, theta=theta),
             nn.ReLU(inplace=True),
         )
 
@@ -117,34 +133,45 @@ class CDCN(nn.Module):
 
 
 class CDCNPP(nn.Module):
-    def __init__(self, theta: float = 0.7, conv: ConvFactory = CentralDifferenceConv2d) -> None:
+    def __init__(
+        self,
+        theta: float = 0.7,
+        conv: ConvFactory = CentralDifferenceConv2d,
+        width_multiplier: float = 1.0,
+    ) -> None:
         super().__init__()
-        self.stem = _layer(conv, 3, 64, theta)
+        stem_channels = scale_channels(64, width_multiplier)
+        block_channels = scale_channels(128, width_multiplier)
+        block1_expanded_channels = scale_channels(204, width_multiplier)
+        block2_channels = scale_channels(153, width_multiplier)
+        block2_expanded_channels = scale_channels(179, width_multiplier)
+        fusion_channels = scale_channels(128, width_multiplier)
+        self.stem = _layer(conv, 3, stem_channels, theta)
         self.block1 = nn.Sequential(
-            _layer(conv, 64, 128, theta),
-            _layer(conv, 128, 204, theta),
-            _layer(conv, 204, 128, theta),
+            _layer(conv, stem_channels, block_channels, theta),
+            _layer(conv, block_channels, block1_expanded_channels, theta),
+            _layer(conv, block1_expanded_channels, block_channels, theta),
             nn.MaxPool2d(3, stride=2, padding=1),
         )
         self.block2 = nn.Sequential(
-            _layer(conv, 128, 153, theta),
-            _layer(conv, 153, 128, theta),
-            _layer(conv, 128, 179, theta),
-            _layer(conv, 179, 128, theta),
+            _layer(conv, block_channels, block2_channels, theta),
+            _layer(conv, block2_channels, block_channels, theta),
+            _layer(conv, block_channels, block2_expanded_channels, theta),
+            _layer(conv, block2_expanded_channels, block_channels, theta),
             nn.MaxPool2d(3, stride=2, padding=1),
         )
         self.block3 = nn.Sequential(
-            _layer(conv, 128, 128, theta),
-            _layer(conv, 128, 153, theta),
-            _layer(conv, 153, 128, theta),
+            _layer(conv, block_channels, block_channels, theta),
+            _layer(conv, block_channels, block2_channels, theta),
+            _layer(conv, block2_channels, block_channels, theta),
             nn.MaxPool2d(3, stride=2, padding=1),
         )
         self.attention = nn.ModuleList(
             (SpatialAttention(7), SpatialAttention(5), SpatialAttention(3))
         )
         self.head = nn.Sequential(
-            _layer(conv, 384, 128, theta),
-            conv(128, 1, kernel_size=3, padding=1, bias=False, theta=theta),
+            _layer(conv, 3 * block_channels, fusion_channels, theta),
+            conv(fusion_channels, 1, kernel_size=3, padding=1, bias=False, theta=theta),
             nn.ReLU(inplace=True),
         )
 
@@ -168,10 +195,10 @@ class CDCNPP(nn.Module):
 MODELS: dict[str, type[nn.Module]] = {"cdcn": CDCN, "cdcnpp": CDCNPP}
 
 
-def build_model(name: str, theta: float = 0.7) -> nn.Module:
+def build_model(name: str, theta: float = 0.7, width_multiplier: float = 1.0) -> nn.Module:
     try:
         model_type = MODELS[name]
     except KeyError as error:
         choices = ", ".join(sorted(MODELS))
         raise ValueError(f"Unknown model {name!r}; choose one of: {choices}") from error
-    return model_type(theta=theta)
+    return model_type(theta=theta, width_multiplier=width_multiplier)

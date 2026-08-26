@@ -21,6 +21,7 @@ from cdcn_msu_mfsd.data.preprocessing import (
 )
 from cdcn_msu_mfsd.data.protocol import make_folds, save_folds
 from cdcn_msu_mfsd.data.supervision import export_prnet_inputs, import_prnet_outputs
+from cdcn_msu_mfsd.efficiency import benchmark_config, save_efficiency_report
 from cdcn_msu_mfsd.evaluation import evaluate_checkpoint, load_threshold
 from cdcn_msu_mfsd.experiments import (
     aggregate_oof,
@@ -213,6 +214,20 @@ def train(
 ) -> None:
     result = run_training(load_config(config_path, override), resume)
     _echo(result.__dict__)
+
+
+@app.command()
+def benchmark(
+    config_path: Path = Path("configs/base.yaml"),
+    override: Overrides = None,
+    device: Annotated[str, typer.Option()] = "cpu",
+    warmup_runs: Annotated[int, typer.Option(min=0)] = 20,
+    timed_runs: Annotated[int, typer.Option(min=1)] = 100,
+) -> None:
+    config = load_config(config_path, override)
+    report = benchmark_config(config, device, warmup_runs, timed_runs)
+    path = save_efficiency_report(config, report)
+    _echo({"path": path, "report": asdict(report)})
 
 
 @app.command()

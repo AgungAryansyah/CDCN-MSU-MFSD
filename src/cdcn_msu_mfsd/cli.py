@@ -36,6 +36,7 @@ from cdcn_msu_mfsd.prnet_artifacts import (
     prnet_artifact_status,
 )
 from cdcn_msu_mfsd.prnet_generation import generate_prnet_outputs
+from cdcn_msu_mfsd.reporting import benchmark_configurations, collect_results
 from cdcn_msu_mfsd.training import output_directory, run_training
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
@@ -274,6 +275,30 @@ def show_matrix(matrix_path: Path, override: Overrides = None) -> None:
             for config in configurations
         ]
     )
+
+
+@app.command("benchmark-matrix")
+def benchmark_matrix(
+    matrix_path: Path,
+    override: Overrides = None,
+    device: Annotated[str, typer.Option()] = "cpu",
+    warmup_runs: Annotated[int, typer.Option(min=0)] = 20,
+    timed_runs: Annotated[int, typer.Option(min=1)] = 100,
+) -> None:
+    _echo(
+        benchmark_configurations(
+            expand_matrix(matrix_path, override), device, warmup_runs, timed_runs
+        )
+    )
+
+
+@app.command("collect-results")
+def collect_results_command(
+    matrix_path: Path,
+    output_csv: Path,
+    override: Overrides = None,
+) -> None:
+    _echo({"rows": collect_results(expand_matrix(matrix_path, override), output_csv)})
 
 
 @app.command("aggregate-oof")

@@ -24,13 +24,14 @@ def test_width_matrix_has_three_widths_across_folds_and_seeds() -> None:
 
 def test_matrix_overrides_select_a_theta_sweep_width() -> None:
     configs = expand_matrix(
-        Path("configs/ablations/theta.yaml"),
+        Path("configs/matrices/small_theta.yaml"),
         ["model.width_multiplier=0.25", "experiment.name=small-theta-a025"],
     )
 
-    assert len(configs) == 25
+    assert len(configs) == 75
     assert {config.model.width_multiplier for config in configs} == {0.25}
     assert {config.experiment.name for config in configs} == {"small-theta-a025"}
+    assert {config.experiment.seed for config in configs} == {42, 2026, 2027}
 
 
 def test_median_best_epoch_uses_one_based_epochs(tmp_path: Path) -> None:

@@ -1,0 +1,10 @@
+base: ../base.yaml
+name: small-theta
+fixed:
+  model.name: cdcn
+  supervision.kind: pseudo_depth
+  experiment.phase: cv
+axes:
+  model.theta: [0.0, 0.3, 0.5, 0.7, 1.0]
+  experiment.fold: [0, 1, 2, 3, 4]
+  experiment.seed: [42, 2026, 2027]

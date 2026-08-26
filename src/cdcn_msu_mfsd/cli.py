@@ -236,13 +236,17 @@ def evaluate(
 
 
 @app.command("run-matrix")
-def run_matrix_command(matrix_path: Path, dry_run: bool = False) -> None:
-    _echo(run_matrix(matrix_path, dry_run))
+def run_matrix_command(
+    matrix_path: Path,
+    dry_run: bool = False,
+    override: Overrides = None,
+) -> None:
+    _echo(run_matrix(matrix_path, dry_run, override))
 
 
 @app.command("show-matrix")
-def show_matrix(matrix_path: Path) -> None:
-    configurations = expand_matrix(matrix_path)
+def show_matrix(matrix_path: Path, override: Overrides = None) -> None:
+    configurations = expand_matrix(matrix_path, override)
     _echo(
         [
             {

@@ -1,0 +1,11 @@
+base: ../base.yaml
+name: small-width
+fixed:
+  model.name: cdcn
+  model.theta: 0.7
+  supervision.kind: pseudo_depth
+  experiment.phase: cv
+axes:
+  model.width_multiplier: [1.0, 0.5, 0.25]
+  experiment.fold: [0, 1, 2, 3, 4]
+  experiment.seed: [42, 2026, 2027]

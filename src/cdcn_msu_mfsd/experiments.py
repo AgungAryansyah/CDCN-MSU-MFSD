@@ -54,16 +54,19 @@ def _override(key: str, value: Any) -> str:
     return f"{key}={json.dumps(value)}"
 
 
-def expand_matrix(path: Path) -> list[Config]:
+def expand_matrix(path: Path, extra_overrides: list[str] | None = None) -> list[Config]:
     matrix = load_matrix(path)
     keys = sorted(matrix.axes)
     configurations = []
     seen = set()
     for values in itertools.product(*(matrix.axes[key] for key in keys)):
-        overrides = [_override(key, value) for key, value in matrix.fixed.items()]
-        overrides.extend(_override(key, value) for key, value in zip(keys, values, strict=True))
-        overrides.append(_override("experiment.name", matrix.name))
-        config = load_config(matrix.base, overrides)
+        config_overrides = [_override(key, value) for key, value in matrix.fixed.items()]
+        config_overrides.extend(
+            _override(key, value) for key, value in zip(keys, values, strict=True)
+        )
+        config_overrides.append(_override("experiment.name", matrix.name))
+        config_overrides.extend(extra_overrides or [])
+        config = load_config(matrix.base, config_overrides)
         digest = config_hash(config)
         if digest not in seen:
             configurations.append(config)
@@ -71,9 +74,11 @@ def expand_matrix(path: Path) -> list[Config]:
     return configurations
 
 
-def run_matrix(path: Path, dry_run: bool = False) -> list[dict[str, Any]]:
+def run_matrix(
+    path: Path, dry_run: bool = False, overrides: list[str] | None = None
+) -> list[dict[str, Any]]:
     results = []
-    for config in expand_matrix(path):
+    for config in expand_matrix(path, overrides):
         output_dir = output_directory(config)
         record: dict[str, Any] = {
             "hash": config_hash(config),

@@ -138,6 +138,10 @@ Completed runs are skipped and incomplete runs resume from `last.pt`. Outputs
 are organized by experiment, model, supervision, fold, and seed under ignored
 `outputs/`.
 
+For the controlled Small-CDCN width and theta experiments, including CPU/GPU
+benchmarking and machine-readable OOF reports, see the
+[Small-CDCN experiment guide](docs/SMALL_CDCN_EXPERIMENT.md).
+
 ## Evaluation
 
 Every frame score is the mean predicted depth. Eight frame scores are averaged

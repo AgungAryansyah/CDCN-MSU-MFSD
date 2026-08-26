@@ -16,6 +16,7 @@ htmlcov/
 /data/
 /cache/
 /outputs/
+/results/
 /checkpoints/
 /logs/
 *.ckpt

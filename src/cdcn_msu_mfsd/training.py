@@ -13,9 +13,14 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, Sampler
 
-from cdcn_msu_mfsd.config import Config, config_hash, save_resolved_config
+from cdcn_msu_mfsd.config import (
+    Config,
+    checkpoint_matches_config,
+    config_hash,
+    save_resolved_config,
+)
 from cdcn_msu_mfsd.data.dataset import MSUMFSDDataset, Sample, TargetProvider
-from cdcn_msu_mfsd.data.preprocessing import load_frame_records
+from cdcn_msu_mfsd.data.preprocessing import FrameRecord, load_frame_records
 from cdcn_msu_mfsd.data.protocol import load_folds
 from cdcn_msu_mfsd.data.supervision import (
     BinaryTarget,
@@ -162,8 +167,40 @@ def provenance(
     return result
 
 
+def split_metadata(config: Config, records: list[FrameRecord]) -> dict[str, list[str]]:
+    test_subjects = sorted({record.subject for record in records if record.protocol == "test"})
+    if config.experiment.phase == "refit":
+        train_subjects = sorted(
+            {record.subject for record in records if record.protocol == "train"}
+        )
+        validation_subjects: list[str] = []
+    else:
+        fold = load_folds(config.paths.cache_root / "folds.json")[config.experiment.fold]
+        train_subjects = list(fold.train_subjects)
+        validation_subjects = list(fold.validation_subjects)
+
+    def videos(subjects: list[str]) -> list[str]:
+        selected = set(subjects)
+        return sorted({record.video_id for record in records if record.subject in selected})
+
+    return {
+        "train_subjects": train_subjects,
+        "validation_subjects": validation_subjects,
+        "test_subjects": test_subjects,
+        "train_videos": videos(train_subjects),
+        "validation_videos": videos(validation_subjects),
+        "test_videos": videos(test_subjects),
+    }
+
+
 def output_directory(config: Config) -> Path:
-    run_name = f"{config.model.name}-{config.supervision.kind}"
+    if config.model.width_multiplier == 1.0 and config.model.theta == 0.7:
+        run_name = f"{config.model.name}-{config.supervision.kind}"
+    else:
+        run_name = (
+            f"{config.model.name}-a{config.model.width_multiplier:.2f}"
+            f"-t{config.model.theta:.2f}-{config.supervision.kind}"
+        )
     return (
         config.paths.output_root
         / config.experiment.name
@@ -233,7 +270,7 @@ def load_checkpoint(
     config: Config,
 ) -> tuple[int, int, float, int, int]:
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
-    if checkpoint["config_hash"] != config_hash(config):
+    if not checkpoint_matches_config(checkpoint.get("config_hash"), config):
         raise ValueError("Checkpoint configuration does not match the requested run")
     model.load_state_dict(checkpoint["model"])
     optimizer.load_state_dict(checkpoint["optimizer"])
@@ -432,13 +469,16 @@ def run_training(config: Config, resume: Path | None = None) -> TrainingResult:
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = config.runtime.allow_tf32
         torch.backends.cudnn.allow_tf32 = config.runtime.allow_tf32
+    frame_records = load_frame_records(config.paths.cache_root / "frames.jsonl")
     depth_validation = None
     if config.supervision.kind == "pseudo_depth":
-        frame_records = load_frame_records(config.paths.cache_root / "frames.jsonl")
         depth_validation = validate_pseudo_depth_targets(frame_records, config.paths.depth_root)
     output_dir = output_directory(config)
     output_dir.mkdir(parents=True, exist_ok=True)
     save_resolved_config(config, output_dir / "config.yaml")
+    (output_dir / "split.json").write_text(
+        json.dumps(split_metadata(config, frame_records), indent=2, sort_keys=True) + "\n"
+    )
     run_provenance = provenance(config, depth_validation)
     (output_dir / "provenance.json").write_text(
         json.dumps(run_provenance, indent=2, sort_keys=True) + "\n"
@@ -448,7 +488,7 @@ def run_training(config: Config, resume: Path | None = None) -> TrainingResult:
     try:
         trainer = Trainer(
             config,
-            build_model(config.model.name, config.model.theta),
+            build_model(config.model.name, config.model.theta, config.model.width_multiplier),
             train_loader,
             validation_loader,
             tracker,

@@ -9,9 +9,11 @@ from torch.utils.data import DataLoader, Dataset
 
 from cdcn_msu_mfsd import evaluation, training
 from cdcn_msu_mfsd.config import load_config
+from cdcn_msu_mfsd.data.preprocessing import FrameRecord
+from cdcn_msu_mfsd.data.protocol import Fold
 from cdcn_msu_mfsd.data.supervision import PseudoDepthValidation
 from cdcn_msu_mfsd.tracking import MetricsTracker
-from cdcn_msu_mfsd.training import Trainer, provenance, run_training
+from cdcn_msu_mfsd.training import Trainer, provenance, run_training, split_metadata
 
 
 class TinyDataset(Dataset[dict[str, object]]):
@@ -83,6 +85,42 @@ def test_provenance_includes_pseudo_depth_metadata(tmp_path: Path) -> None:
     assert metadata["pseudo_depth_checkpoint_sha256"] == "checkpoint"
 
 
+def test_split_metadata_records_subjects_and_videos(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = load_config(Path("configs/experiments/smoke.yaml"))
+    records = [
+        FrameRecord("train-video", 0, "frame.jpg", "001", 1, None, "android", "train", 0, 0, 1, 1),
+        FrameRecord(
+            "validation-video",
+            0,
+            "frame.jpg",
+            "002",
+            0,
+            "printed_photo",
+            "laptop",
+            "train",
+            0,
+            0,
+            1,
+            1,
+        ),
+        FrameRecord(
+            "test-video", 0, "frame.jpg", "003", 0, "ipad_video", "android", "test", 0, 0, 1, 1
+        ),
+    ]
+    monkeypatch.setattr(
+        training,
+        "load_folds",
+        lambda _: [Fold(0, ("001",), ("002",))],
+    )
+
+    split = split_metadata(config, records)
+
+    assert split["train_subjects"] == ["001"]
+    assert split["validation_subjects"] == ["002"]
+    assert split["test_subjects"] == ["003"]
+    assert split["validation_videos"] == ["validation-video"]
+
+
 def test_training_logs_best_checkpoint_pad_metrics(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -95,6 +133,19 @@ def test_training_logs_best_checkpoint_pad_metrics(
     )
     loader = DataLoader(TinyDataset(), batch_size=2)
     monkeypatch.setattr(training, "make_dataloaders", lambda *_: (loader, loader))
+    monkeypatch.setattr(training, "load_frame_records", lambda _: [])
+    monkeypatch.setattr(
+        training,
+        "split_metadata",
+        lambda *_: {
+            "train_subjects": ["001"],
+            "validation_subjects": ["002"],
+            "test_subjects": ["003"],
+            "train_videos": ["train-video"],
+            "validation_videos": ["validation-video"],
+            "test_videos": ["test-video"],
+        },
+    )
     monkeypatch.setattr(training, "build_model", lambda *_: TinyModel())
     monkeypatch.setattr(
         training,
@@ -125,3 +176,4 @@ def test_training_logs_best_checkpoint_pad_metrics(
     assert summary["validation/acer"] == 0.15
     assert summary["validation/roc_auc"] == 0.93
     assert summary["validation/confusion/false_positive"] == 2
+    assert json.loads((result.output_dir / "split.json").read_text())["test_subjects"] == ["003"]

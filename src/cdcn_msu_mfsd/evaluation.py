@@ -8,7 +8,7 @@ import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
-from cdcn_msu_mfsd.config import Config, config_hash
+from cdcn_msu_mfsd.config import Config, checkpoint_matches_config
 from cdcn_msu_mfsd.data.dataset import MSUMFSDDataset, Sample
 from cdcn_msu_mfsd.data.preprocessing import load_frame_records
 from cdcn_msu_mfsd.data.protocol import load_folds
@@ -213,9 +213,11 @@ def evaluate_checkpoint(
         raise ValueError("Official test evaluation requires a refit checkpoint configuration")
     device = select_device(config.runtime.device)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    if checkpoint.get("config_hash") != config_hash(config):
+    if not checkpoint_matches_config(checkpoint.get("config_hash"), config):
         raise ValueError("Checkpoint configuration does not match evaluation configuration")
-    model = build_model(config.model.name, config.model.theta).to(device)
+    model = build_model(config.model.name, config.model.theta, config.model.width_multiplier).to(
+        device
+    )
     model.load_state_dict(checkpoint["model"])
     frames = predict(model, _evaluation_loader(config, split, device), device)
     videos = aggregate_video_predictions(frames)

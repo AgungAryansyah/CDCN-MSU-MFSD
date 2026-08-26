@@ -199,7 +199,7 @@ def run_refit(config: Config, epochs: int, threshold: float | None = None) -> Pa
     tracker = create_tracker(config, output_dir, run_provenance)
     trainer = Trainer(
         config,
-        build_model(config.model.name, config.model.theta),
+        build_model(config.model.name, config.model.theta, config.model.width_multiplier),
         loader,
         loader,
         tracker,

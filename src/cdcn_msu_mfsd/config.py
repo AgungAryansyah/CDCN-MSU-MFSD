@@ -38,6 +38,7 @@ class DataConfig(StrictModel):
 class ModelConfig(StrictModel):
     name: Literal["cdcn", "cdcnpp"] = "cdcn"
     theta: float = Field(default=0.7, ge=0, le=1)
+    width_multiplier: float = Field(default=1.0, gt=0)
 
 
 class SupervisionConfig(StrictModel):
@@ -169,6 +170,20 @@ def resolved_config(config: Config) -> dict[str, Any]:
 def config_hash(config: Config) -> str:
     payload = json.dumps(resolved_config(config), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def legacy_config_hash(config: Config) -> str | None:
+    if config.model.width_multiplier != 1.0:
+        return None
+    payload = resolved_config(config)
+    payload["model"].pop("width_multiplier")
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def checkpoint_matches_config(checkpoint_hash: object, config: Config) -> bool:
+    allowed = {config_hash(config), legacy_config_hash(config)}
+    return isinstance(checkpoint_hash, str) and checkpoint_hash in allowed
 
 
 def save_resolved_config(config: Config, path: Path) -> None:

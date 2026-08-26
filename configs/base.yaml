@@ -15,6 +15,7 @@ data:
 model:
   name: cdcn
   theta: 0.7
+  width_multiplier: 1.0
 supervision:
   kind: binary
 prnet:

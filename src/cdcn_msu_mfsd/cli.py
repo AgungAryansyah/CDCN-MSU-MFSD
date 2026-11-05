@@ -30,6 +30,8 @@ from cdcn_msu_mfsd.experiments import (
     run_matrix,
     run_refit_test,
 )
+from cdcn_msu_mfsd.pipelines.common import Campaign
+from cdcn_msu_mfsd.pipelines.runner import read_status, run_component
 from cdcn_msu_mfsd.prnet_artifacts import (
     artifact_reports_json,
     fetch_prnet_artifacts,
@@ -326,6 +328,31 @@ def refit_test(
 @app.command("manifest-summary")
 def manifest_summary_command(path: Path = Path("cache/manifest.jsonl")) -> None:
     _echo(manifest_summary(load_manifest(path)))
+
+
+@app.command()
+def pipeline(
+    component: Annotated[
+        str,
+        typer.Argument(
+            help="preflight, wandb-smoke, verify, width, width-oof, model-stats, width-efficiency, "
+            "selection, theta, theta-oof, theta-efficiency, freeze, refit, test, report, or plan"
+        ),
+    ],
+    campaign_path: Annotated[Path, typer.Option("--campaign")] = Path(
+        "configs/pipelines/thesis_completion.yaml"
+    ),
+) -> None:
+    _echo(run_component(component, Campaign(campaign_path)))
+
+
+@app.command("pipeline-status")
+def pipeline_status(
+    campaign_path: Annotated[Path, typer.Option("--campaign")] = Path(
+        "configs/pipelines/thesis_completion.yaml"
+    ),
+) -> None:
+    _echo(read_status(Campaign(campaign_path)))
 
 
 if __name__ == "__main__":

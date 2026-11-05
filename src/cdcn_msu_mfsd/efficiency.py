@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 from torch import Tensor, nn
 
-from cdcn_msu_mfsd.config import Config
+from cdcn_msu_mfsd.config import Config, checkpoint_matches_config
 from cdcn_msu_mfsd.models import CentralDifferenceConv2d, build_model
 from cdcn_msu_mfsd.training import output_directory, select_device
 
@@ -64,6 +64,7 @@ def _environment(device: torch.device) -> dict[str, str | int | None]:
         "cuda": torch.version.cuda,
         "device": str(device),
         "cpu_count": os.cpu_count(),
+        "torch_num_threads": torch.get_num_threads(),
     }
 
 
@@ -121,6 +122,11 @@ def benchmark_model(
     model = model.to(device).eval()
     inputs = torch.randn(input_shape, device=device)
     macs = estimate_macs(model, inputs)
+    trainable_parameters = sum(
+        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+    )
+    total_parameters = sum(parameter.numel() for parameter in model.parameters())
+    model_state_size_mb = _model_state_size_mb(model)
     with torch.inference_mode():
         for _ in range(warmup_runs):
             model(inputs)
@@ -129,16 +135,59 @@ def benchmark_model(
         for _ in range(timed_runs):
             model(inputs)
         _synchronize(device)
+        elapsed = time.perf_counter() - started
     return BenchmarkMeasurements(
         input_shape=input_shape,
-        trainable_parameters=sum(
-            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
-        ),
-        total_parameters=sum(parameter.numel() for parameter in model.parameters()),
+        trainable_parameters=trainable_parameters,
+        total_parameters=total_parameters,
         macs=macs,
-        model_state_size_mb=_model_state_size_mb(model),
-        latency_ms=(time.perf_counter() - started) * 1000 / timed_runs,
+        model_state_size_mb=model_state_size_mb,
+        latency_ms=elapsed * 1000 / timed_runs,
         environment=_environment(device),
+    )
+
+
+def benchmark_checkpoint(
+    config: Config,
+    checkpoint_path: Path,
+    requested_device: str,
+    warmup_runs: int = 20,
+    timed_runs: int = 100,
+    input_shape: tuple[int, int, int, int] = _DEFAULT_INPUT_SHAPE,
+) -> EfficiencyReport:
+    device = select_device(requested_device)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    if not checkpoint_matches_config(checkpoint.get("config_hash"), config):
+        raise ValueError(f"Checkpoint config does not match benchmark config: {checkpoint_path}")
+    model = build_model(config.model.name, config.model.theta, config.model.width_multiplier)
+    model.load_state_dict(checkpoint["model"])
+    previous_matmul_tf32 = torch.backends.cuda.matmul.allow_tf32
+    previous_cudnn_tf32 = torch.backends.cudnn.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    try:
+        values = benchmark_model(model, device, input_shape, warmup_runs, timed_runs)
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = previous_matmul_tf32
+        torch.backends.cudnn.allow_tf32 = previous_cudnn_tf32
+    environment = dict(values.environment)
+    environment["tf32"] = 0
+    environment["autocast"] = 0
+    environment["checkpoint"] = str(checkpoint_path)
+    return EfficiencyReport(
+        model=config.model.name,
+        width_multiplier=config.model.width_multiplier,
+        theta=config.model.theta,
+        device=str(device),
+        input_shape=values.input_shape,
+        trainable_parameters=values.trainable_parameters,
+        total_parameters=values.total_parameters,
+        macs=values.macs,
+        model_state_size_mb=values.model_state_size_mb,
+        latency_ms=values.latency_ms,
+        warmup_runs=warmup_runs,
+        timed_runs=timed_runs,
+        environment=environment,
     )
 
 

@@ -1,0 +1,14 @@
+name: thesis-completion-2026
+base_config: ../base.yaml
+width_experiment: small-width
+theta_experiment: small-theta-a050
+model: cdcn
+supervision: pseudo_depth
+widths: [1.0, 0.5, 0.25]
+primary_width: 0.5
+theta_values: [0.0, 0.3, 0.5, 0.7, 1.0]
+seeds: [42, 2026, 2027]
+folds: [0, 1, 2, 3, 4]
+test_videos: 160
+test_genuine: 40
+test_attacks: 120

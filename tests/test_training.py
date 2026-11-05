@@ -13,7 +13,13 @@ from cdcn_msu_mfsd.data.preprocessing import FrameRecord
 from cdcn_msu_mfsd.data.protocol import Fold
 from cdcn_msu_mfsd.data.supervision import PseudoDepthValidation
 from cdcn_msu_mfsd.tracking import MetricsTracker
-from cdcn_msu_mfsd.training import Trainer, provenance, run_training, split_metadata
+from cdcn_msu_mfsd.training import (
+    Trainer,
+    provenance,
+    run_training,
+    save_checkpoint,
+    split_metadata,
+)
 
 
 class TinyDataset(Dataset[dict[str, object]]):
@@ -179,3 +185,55 @@ def test_training_logs_best_checkpoint_pad_metrics(
     assert summary["validation/f1_attack"] == 0.8
     assert summary["validation/confusion/false_positive"] == 2
     assert json.loads((result.output_dir / "split.json").read_text())["test_subjects"] == ["003"]
+
+
+def test_fixed_epoch_refit_resumes_from_last_checkpoint(tmp_path: Path) -> None:
+    config = load_config(
+        Path("configs/experiments/smoke.yaml"),
+        [
+            "experiment.phase=refit",
+            "training.epochs=2",
+            "runtime.device=cpu",
+            "runtime.amp=false",
+            "tracking.log_every_steps=1",
+        ],
+    )
+    loader = DataLoader(TinyDataset(), batch_size=2)
+    first = Trainer(
+        config,
+        TinyModel(),
+        loader,
+        loader,
+        MetricsTracker(tmp_path / "metrics.jsonl"),
+        torch.device("cpu"),
+    )
+    metrics, global_step = first.train_epoch(0, 0)
+    first.scheduler.step()
+    last_path = tmp_path / "last.pt"
+    save_checkpoint(
+        last_path,
+        0,
+        0,
+        metrics["total"],
+        global_step,
+        0,
+        first.model,
+        first.optimizer,
+        first.scheduler,
+        first.scaler,
+        config,
+    )
+
+    resumed = Trainer(
+        config,
+        TinyModel(),
+        loader,
+        loader,
+        MetricsTracker(tmp_path / "resumed-metrics.jsonl"),
+        torch.device("cpu"),
+    )
+    final_step = resumed.fit_fixed_epochs(tmp_path, last_path)
+
+    final = torch.load(tmp_path / "final.pt", map_location="cpu", weights_only=False)
+    assert final["epoch"] == 1
+    assert final_step > global_step

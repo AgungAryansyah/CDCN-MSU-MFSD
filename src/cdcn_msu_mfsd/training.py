@@ -1,7 +1,9 @@
 import hashlib
 import json
 import random
+import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -30,7 +32,12 @@ from cdcn_msu_mfsd.data.supervision import (
 )
 from cdcn_msu_mfsd.losses import DepthLoss
 from cdcn_msu_mfsd.models import build_model
-from cdcn_msu_mfsd.tracking import MetricsTracker, create_tracker, evaluation_metrics
+from cdcn_msu_mfsd.tracking import (
+    MetricsTracker,
+    TrackingContext,
+    create_tracker,
+    evaluation_metrics,
+)
 
 
 @dataclass(frozen=True)
@@ -132,6 +139,28 @@ def make_dataloaders(
     return _loader(train_dataset, config, True, device), _loader(
         validation_dataset, config, False, device
     )
+
+
+def make_refit_loader(config: Config, device: torch.device) -> DataLoader[Sample]:
+    frame_records = load_frame_records(config.paths.cache_root / "frames.jsonl")
+    subjects = {record.subject for record in frame_records if record.protocol == "train"}
+    target_provider: TargetProvider = (
+        BinaryTarget()
+        if config.supervision.kind == "binary"
+        else PseudoDepthTarget(config.paths.depth_root)
+    )
+    dataset = MSUMFSDDataset(
+        frame_records,
+        config.paths.cache_root,
+        target_provider,
+        subjects,
+        True,
+        config.data.frames_per_video,
+        config.experiment.seed,
+        config.data.crop_scale,
+        (config.data.crop_scale_min, config.data.crop_scale_max),
+    )
+    return _loader(dataset, config, True, device)
 
 
 def _file_hash(path: Path) -> str:
@@ -332,6 +361,8 @@ class Trainer:
             dataset.set_epoch(epoch)
         totals = {"total": 0.0, "absolute": 0.0, "contrastive": 0.0}
         self.optimizer.zero_grad(set_to_none=True)
+        started = time.monotonic()
+        report_every = max(1, len(self.train_loader) // 10)
         for batch_index, batch in enumerate(self.train_loader):
             images, targets = self._batch(batch)
             with torch.autocast(
@@ -359,6 +390,19 @@ class Trainer:
                 self.tracker.log(
                     {f"train/{name}": float(value.detach()) for name, value in components.items()},
                     global_step,
+                )
+            completed = batch_index + 1
+            if completed % report_every == 0 or completed == len(self.train_loader):
+                elapsed = time.monotonic() - started
+                rate = completed / elapsed if elapsed else 0.0
+                remaining = len(self.train_loader) - completed
+                eta = remaining / rate if rate else float("inf")
+                print(
+                    f"Training batches {completed}/{len(self.train_loader)} "
+                    f"({100 * completed / len(self.train_loader):.1f}%), "
+                    f"{rate:.2f} batches/s, elapsed {elapsed / 60:.1f} min, "
+                    f"ETA {eta / 60:.1f} min",
+                    flush=True,
                 )
         return {name: value / len(self.train_loader) for name, value in totals.items()}, global_step
 
@@ -401,7 +445,11 @@ class Trainer:
                 self.config,
             )
         epochs_completed = start_epoch
+        epoch_started = time.monotonic()
         for epoch in range(start_epoch, self.config.training.epochs):
+            started = time.monotonic()
+            if self.device.type == "cuda":
+                torch.cuda.reset_peak_memory_stats(self.device)
             train_metrics, global_step = self.train_epoch(epoch, global_step)
             validation_metrics = self.validate()
             learning_rate = self.optimizer.param_groups[0]["lr"]
@@ -414,6 +462,17 @@ class Trainer:
             if self.device.type == "cuda":
                 epoch_metrics["gpu/max_memory_gib"] = torch.cuda.max_memory_reserved() / (1024**3)
             self.tracker.log(epoch_metrics, global_step)
+            completed_epochs = epoch + 1
+            elapsed = time.monotonic() - epoch_started
+            average_epoch = elapsed / max(1, completed_epochs - start_epoch)
+            remaining_seconds = average_epoch * (self.config.training.epochs - completed_epochs)
+            print(
+                f"CV epoch {completed_epochs}/{self.config.training.epochs} completed "
+                f"in {(time.monotonic() - started) / 60:.1f} min. "
+                f"Total elapsed {elapsed / 60:.1f} min. "
+                f"ETA to configured limit {remaining_seconds / 60:.1f} min.",
+                flush=True,
+            )
             current_loss = validation_metrics["total"]
             improved = current_loss < best_loss
             if improved:
@@ -462,8 +521,76 @@ class Trainer:
         )
         return TrainingResult(output_dir, best_epoch, best_loss, epochs_completed)
 
+    def fit_fixed_epochs(self, output_dir: Path, resume: Path | None = None) -> int:
+        start_epoch = 0
+        global_step = 0
+        if resume is not None:
+            start_epoch, _, _, global_step, _ = load_checkpoint(
+                resume,
+                self.model,
+                self.optimizer,
+                self.scheduler,
+                self.scaler,
+                self.config,
+            )
+        last_path = output_dir / "last.pt"
+        epoch_started = time.monotonic()
+        for epoch in range(start_epoch, self.config.training.epochs):
+            started = time.monotonic()
+            if self.device.type == "cuda":
+                torch.cuda.reset_peak_memory_stats(self.device)
+            train_metrics, global_step = self.train_epoch(epoch, global_step)
+            metrics: dict[str, int | float] = {
+                "epoch": epoch + 1,
+                **{f"refit/{name}": value for name, value in train_metrics.items()},
+            }
+            if self.device.type == "cuda":
+                metrics["gpu/epoch_max_memory_gib"] = torch.cuda.max_memory_reserved(
+                    self.device
+                ) / (1024**3)
+            self.tracker.log(metrics, global_step)
+            self.scheduler.step()
+            save_checkpoint(
+                last_path,
+                epoch,
+                epoch,
+                train_metrics["total"],
+                global_step,
+                0,
+                self.model,
+                self.optimizer,
+                self.scheduler,
+                self.scaler,
+                self.config,
+            )
+            completed_epochs = epoch + 1
+            elapsed = time.monotonic() - epoch_started
+            average_epoch = elapsed / max(1, completed_epochs - start_epoch)
+            remaining_seconds = average_epoch * (self.config.training.epochs - completed_epochs)
+            print(
+                f"Refit epoch {completed_epochs}/{self.config.training.epochs} completed "
+                f"in {(time.monotonic() - started) / 60:.1f} min. "
+                f"Total elapsed {elapsed / 60:.1f} min. "
+                f"ETA to configured limit {remaining_seconds / 60:.1f} min.",
+                flush=True,
+            )
+        if not last_path.exists():
+            raise RuntimeError("Refit did not produce a resumable checkpoint")
+        final_path = output_dir / "final.pt"
+        temporary_path = output_dir / "final.pt.tmp"
+        shutil.copyfile(last_path, temporary_path)
+        temporary_path.replace(final_path)
+        self.tracker.summary(
+            {"refit_epochs": self.config.training.epochs, "global_step": global_step}
+        )
+        return global_step
 
-def run_training(config: Config, resume: Path | None = None) -> TrainingResult:
+
+def run_training(
+    config: Config,
+    resume: Path | None = None,
+    tracking_context: TrackingContext | None = None,
+) -> TrainingResult:
     seed_everything(config.experiment.seed, config.runtime.deterministic)
     device = select_device(config.runtime.device)
     if device.type == "cuda":
@@ -484,7 +611,11 @@ def run_training(config: Config, resume: Path | None = None) -> TrainingResult:
         json.dumps(run_provenance, indent=2, sort_keys=True) + "\n"
     )
     train_loader, validation_loader = make_dataloaders(config, device)
-    tracker = create_tracker(config, output_dir, run_provenance)
+    tracker = (
+        create_tracker(config, output_dir, run_provenance)
+        if tracking_context is None
+        else create_tracker(config, output_dir, run_provenance, tracking_context)
+    )
     try:
         trainer = Trainer(
             config,

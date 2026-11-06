@@ -380,21 +380,34 @@ def _execute(campaign: Campaign, stage: str, gpu_indices: list[int]) -> None:
         ]
         active: dict[str, str] = {}
         errors: list[str] = []
-        worker_done = 0
+        worker_done: set[str] = set()
         for process in processes:
             process.start()
         try:
-            while worker_done < len(processes):
+            while len(worker_done) < len(processes):
                 try:
                     message = result_queue.get(timeout=60)
                 except queue.Empty:
                     running = "; ".join(f"{worker}: {job}" for worker, job in active.items())
                     progress.update(completed, running or "workers starting")
                     dead = [process for process in processes if not process.is_alive()]
-                    if dead and worker_done < len(processes):
+                    unreported = [
+                        process
+                        for process in dead
+                        if process.name.removeprefix("fit-") not in worker_done
+                    ]
+                    unexpected = [process for process in unreported if process.exitcode != 0]
+                    if unexpected:
                         raise RuntimeError(
                             "Fit worker exited unexpectedly: "
-                            + ", ".join(f"{item.name}={item.exitcode}" for item in dead)
+                            + ", ".join(
+                                f"{item.name}={item.exitcode}" for item in unexpected
+                            )
+                        ) from None
+                    if len(dead) == len(processes) and unreported:
+                        raise RuntimeError(
+                            "Fit workers exited without completion messages: "
+                            + ", ".join(f"{item.name}={item.exitcode}" for item in unreported)
                         ) from None
                     continue
                 kind = message["kind"]
@@ -427,7 +440,7 @@ def _execute(campaign: Campaign, stage: str, gpu_indices: list[int]) -> None:
                     errors.append(str(message["error"]))
                     print(message["error"], file=sys.stderr, flush=True)
                 elif kind == "worker_done":
-                    worker_done += 1
+                    worker_done.add(worker)
             for process in processes:
                 process.join()
         finally:

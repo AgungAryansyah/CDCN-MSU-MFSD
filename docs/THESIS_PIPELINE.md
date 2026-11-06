@@ -13,9 +13,10 @@ Run this command from the repository root on `labkc-comm3`:
 bash scripts/pipelines/run_all.sh --detach
 ```
 
-The script starts a `tmux` session named `thesis-completion-2026`. It uses GPU
-0 for training. It measures CPU and GPU inference latency in separate processes.
-It requires online W&B settings in `.env`.
+The script starts a `tmux` session named `thesis-completion-2026`. It runs two
+fits at a time on GPUs 0 and 1 during theta cross-validation and final refits.
+It measures CPU and GPU inference latency in separate processes. It requires
+online W&B settings in `.env`.
 
 Check the stage status with:
 
@@ -28,10 +29,15 @@ Read the log at
 `outputs/pipelines/thesis-completion-2026/status.json`. The state file records
 each completed or failed stage.
 
-Run the same command after an interruption. The pipeline skips complete CV runs.
-It resumes incomplete CV and refit checkpoints. Test evaluation reuses cached
-frame predictions. A frozen final plan prevents changes to thresholds or refit
-epochs after test evaluation starts.
+After an interruption, resume from the first incomplete stage with:
+
+```bash
+bash scripts/pipelines/run_all.sh --resume --detach
+```
+
+The pipeline skips complete CV runs and resumes incomplete CV and refit
+checkpoints. Test evaluation reuses cached frame predictions. A frozen final
+plan prevents changes to thresholds or refit epochs after test evaluation starts.
 
 ## Separate stages
 
